@@ -1,0 +1,341 @@
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// HP Prime Hebrew-Russian Editor -- Renderer MVP  (Task 5)
+//
+// DEPENDENCIES:
+//   hebrew_font_bitmap  (HFB_Init, HFB_CodeToIdx, HFB_BlitGlyph)
+//   text_engine         (L0, TE_LineCount, TE_GetLine)
+//
+// SCREEN LAYOUT (320 x 240 px):
+//   y  0..15   header bar  (REND_DrawStatus renders here)
+//   y 16..213  editor area (9 lines x 22px = 198px)
+//   y 214..239 reserved for future status/info strip
+//
+// VIEWPORT GLOBALS:
+//   R_LINE_H    : line height in pixels (22)
+//   R_LINES_VIS : visible line count (9)
+//   R_X_LEFT    : left margin pixel (4)
+//   R_X_RIGHT   : right reference pixel for RTL layout (316)
+//   R_Y_TOP     : top of editor area (16)
+//   R_ADV_HEB   : pixel advance per Hebrew glyph (15 = 14px + 1px gap)
+//   R_ADV_LTR   : pixel advance per LTR char via TEXTOUT_P (7)
+//   R_VIEW_TOP  : top visible line index, 1-based
+//   R_HEB_FIRST : CHAR(1488) -- first Hebrew codepoint
+//   R_HEB_LAST  : CHAR(1514) -- last Hebrew codepoint
+//
+// DIRECTION MODEL (line-level, MVP):
+//   Heuristic: any character in CHAR(1488)..CHAR(1514) -> RTL.
+//   No mixed-run bidi at this phase.
+//   Non-Hebrew lines -> LTR.
+//   Mixed lines (Hebrew + other): RTL with placeholder boxes
+//   for non-Hebrew characters.  This is a documented MVP limit.
+//
+// RTL RENDERING:
+//   Logical char kk blitted at x = R_X_RIGHT - 14 - (kk-1)*R_ADV_HEB
+//   kk=1 -> rightmost cell (x=302..315), kk=2 -> next left, etc.
+//   Hebrew chars -> HFB_BlitGlyph.
+//   Non-Hebrew in RTL -> gray placeholder box (R_COL_PH).
+//   Line truncated (EXIT) when x < R_X_LEFT.
+//   Max chars per line: ~20 (depends on R_ADV_HEB).
+//
+// LTR RENDERING:
+//   cur_x starts at R_X_LEFT and increases per char.
+//   Hebrew chars -> HFB_BlitGlyph, advance R_ADV_HEB.
+//   Non-Hebrew -> TEXTOUT_P size 1, advance R_ADV_LTR.
+//   Line truncated (EXIT) when cur_x > R_X_RIGHT.
+//
+// CURSOR MODEL:
+//   LTR: cur_x = R_X_LEFT + (cc-1) * R_ADV_LTR
+//   RTL: cur_x = R_X_RIGHT - (cc-1) * R_ADV_HEB
+//   cc=1 in RTL -> x=R_X_RIGHT (just right of first/rightmost glyph).
+//   cc=1 in LTR -> x=R_X_LEFT (left edge of editor area).
+//   Cursor is a 2px wide by (R_LINE_H-2) tall vertical bar
+//   drawn in R_COL_CUR (blue).  Clamped to [R_X_LEFT..R_X_RIGHT].
+//
+// CLIPPING:
+//   No soft wrap in MVP.
+//   RTL: stops rendering when glyph x < R_X_LEFT.
+//   LTR: stops rendering when cur_x > R_X_RIGHT.
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// Renderer globals
+// ----------------------------------------------------------------
+EXPORT R_LINE_H;
+EXPORT R_LINES_VIS;
+EXPORT R_X_LEFT;
+EXPORT R_X_RIGHT;
+EXPORT R_Y_TOP;
+EXPORT R_ADV_HEB;
+EXPORT R_ADV_LTR;
+EXPORT R_VIEW_TOP;
+EXPORT R_HEB_FIRST;
+EXPORT R_HEB_LAST;
+EXPORT R_COL_BG;
+EXPORT R_COL_FG;
+EXPORT R_COL_CUR;
+EXPORT R_COL_ACT;
+EXPORT R_COL_PH;
+
+
+// ----------------------------------------------------------------
+// REND_Init -- initialize renderer globals and Hebrew font
+// Must be called before any render function.
+// ----------------------------------------------------------------
+EXPORT REND_Init()
+BEGIN
+  R_LINE_H    := 22;
+  R_LINES_VIS := 9;
+  R_X_LEFT    := 4;
+  R_X_RIGHT   := 316;
+  R_Y_TOP     := 16;
+  R_ADV_HEB   := 15;
+  R_ADV_LTR   := 7;
+  R_VIEW_TOP  := 1;
+  R_HEB_FIRST := CHAR(1488);
+  R_HEB_LAST  := CHAR(1514);
+  R_COL_BG    := RGB(255,255,255);
+  R_COL_FG    := RGB(0,0,0);
+  R_COL_CUR   := RGB(0,80,200);
+  R_COL_ACT   := RGB(230,240,255);
+  R_COL_PH    := RGB(170,170,170);
+  HFB_Init();
+END;
+
+
+// ----------------------------------------------------------------
+// REND_IsHeb -- returns 1 if single char ch is Hebrew, 0 otherwise
+// ----------------------------------------------------------------
+EXPORT REND_IsHeb(ch)
+BEGIN
+  IF ch >= R_HEB_FIRST AND ch <= R_HEB_LAST THEN
+    RETURN 1;
+  END;
+  RETURN 0;
+END;
+
+
+// ----------------------------------------------------------------
+// REND__CharCP -- resolve decimal Unicode codepoint for Hebrew char
+// Loops 1488..1514; returns 0 for non-Hebrew input.
+// Uses explicit loop instead of ASC() to avoid HP Prime ASC() issues.
+// ----------------------------------------------------------------
+EXPORT REND__CharCP(ch)
+BEGIN
+  LOCAL kk;
+  FOR kk FROM 1488 TO 1514 DO
+    IF ch == CHAR(kk) THEN RETURN kk; END;
+  END;
+  RETURN 0;
+END;
+
+
+// ----------------------------------------------------------------
+// REND_LineDir -- determine line rendering direction
+// Returns 1 (RTL) if any character is Hebrew, 0 (LTR) otherwise.
+// ----------------------------------------------------------------
+EXPORT REND_LineDir(txt)
+BEGIN
+  LOCAL slen, kk, ch;
+  slen := SIZE(txt);
+  FOR kk FROM 1 TO slen DO
+    ch := MID(txt, kk, 1);
+    IF ch >= R_HEB_FIRST AND ch <= R_HEB_LAST THEN
+      RETURN 1;
+    END;
+  END;
+  RETURN 0;
+END;
+
+
+// ----------------------------------------------------------------
+// REND__PlaceholderBox -- gray rectangle for unsupported chars
+// Used in RTL lines for non-Hebrew characters.
+// bx, by = top-left corner;  bw, bh = width, height
+// Skipped if completely outside [R_X_LEFT..R_X_RIGHT].
+// ----------------------------------------------------------------
+EXPORT REND__PlaceholderBox(bx, by, bw, bh)
+BEGIN
+  LOCAL x2, y2;
+  x2 := bx + bw - 1;
+  y2 := by + bh - 1;
+  IF x2 < R_X_LEFT OR bx > R_X_RIGHT THEN RETURN; END;
+  RECT_P(bx, by, x2, y2, R_COL_PH, R_COL_PH);
+END;
+
+
+// ----------------------------------------------------------------
+// REND_ClearArea -- fill editor area with background color
+// Clears y = R_Y_TOP .. R_Y_TOP + R_LINES_VIS*R_LINE_H - 1
+// ----------------------------------------------------------------
+EXPORT REND_ClearArea()
+BEGIN
+  LOCAL y_bot;
+  y_bot := R_Y_TOP + R_LINES_VIS * R_LINE_H - 1;
+  RECT_P(0, R_Y_TOP, 319, y_bot, R_COL_BG, R_COL_BG);
+END;
+
+
+// ----------------------------------------------------------------
+// REND_SetViewTop -- set 1-based top visible line index
+// Clamps to valid document range.
+// ----------------------------------------------------------------
+EXPORT REND_SetViewTop(vt)
+BEGIN
+  LOCAL lcount;
+  lcount := TE_LineCount();
+  IF vt < 1 THEN vt := 1; END;
+  IF vt > lcount THEN vt := lcount; END;
+  R_VIEW_TOP := vt;
+END;
+
+
+// ----------------------------------------------------------------
+// REND_DrawLine -- render one logical line of text to screen
+//
+// txt    : line text string in logical character order
+// scr_y  : screen y coordinate of top of this line row
+// is_rtl : 1 = RTL mode,  0 = LTR mode
+//
+// RTL placement:
+//   Char kk blit at bx = R_X_RIGHT - 14 - (kk-1)*R_ADV_HEB
+//   Hebrew  -> HFB_BlitGlyph(idx, bx, scr_y)
+//   Other   -> REND__PlaceholderBox(bx, scr_y, 14, 20)
+//   EXIT when bx < R_X_LEFT (horizontal clip)
+//
+// LTR placement:
+//   cur_x starts at R_X_LEFT, advances per character
+//   Hebrew  -> HFB_BlitGlyph, advance R_ADV_HEB
+//   Other   -> TEXTOUT_P at (cur_x, scr_y+6) size 1, advance R_ADV_LTR
+//   EXIT when cur_x > R_X_RIGHT (horizontal clip)
+// ----------------------------------------------------------------
+EXPORT REND_DrawLine(txt, scr_y, is_rtl)
+BEGIN
+  LOCAL slen, kk, ch, cp, idx_g, cur_x, bx;
+  slen := SIZE(txt);
+  IF slen == 0 THEN RETURN; END;
+  IF is_rtl THEN
+    FOR kk FROM 1 TO slen DO
+      bx := R_X_RIGHT - 14 - (kk - 1) * R_ADV_HEB;
+      IF bx >= R_X_LEFT THEN
+        ch := MID(txt, kk, 1);
+        IF ch >= R_HEB_FIRST AND ch <= R_HEB_LAST THEN
+          cp    := REND__CharCP(ch);
+          idx_g := HFB_CodeToIdx(cp);
+          IF idx_g > 0 THEN
+            HFB_BlitGlyph(idx_g, bx, scr_y);
+          ELSE
+            REND__PlaceholderBox(bx, scr_y, 14, 20);
+          END;
+        ELSE
+          REND__PlaceholderBox(bx, scr_y, 14, 20);
+        END;
+      END;
+    END;
+  ELSE
+    cur_x := R_X_LEFT;
+    FOR kk FROM 1 TO slen DO
+      IF cur_x <= R_X_RIGHT THEN
+        ch := MID(txt, kk, 1);
+        IF ch >= R_HEB_FIRST AND ch <= R_HEB_LAST THEN
+          cp    := REND__CharCP(ch);
+          idx_g := HFB_CodeToIdx(cp);
+          IF idx_g > 0 THEN
+            HFB_BlitGlyph(idx_g, cur_x, scr_y);
+          END;
+          cur_x := cur_x + R_ADV_HEB;
+        ELSE
+          TEXTOUT_P(ch, cur_x, scr_y + 6, 1, R_COL_FG);
+          cur_x := cur_x + R_ADV_LTR;
+        END;
+      END;
+    END;
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// REND_DrawCursor -- draw cursor at logical column cc
+//
+// cc     : 1-based cursor column (1 = before first char)
+// scr_y  : top y of the line row
+// is_rtl : 1 = RTL,  0 = LTR
+// slen   : character count of line (used to clamp cc)
+//
+// Cursor is a 2px wide, (R_LINE_H-2) tall vertical bar in R_COL_CUR.
+//
+// LTR x = R_X_LEFT + (cc-1) * R_ADV_LTR
+// RTL x = R_X_RIGHT - (cc-1) * R_ADV_HEB
+//   cc=1 RTL -> x=R_X_RIGHT (rightmost visual position)
+//   cc=slen+1 RTL -> x=R_X_RIGHT-slen*R_ADV_HEB (leftmost)
+//
+// cur_x clamped to [R_X_LEFT .. R_X_RIGHT].
+// ----------------------------------------------------------------
+EXPORT REND_DrawCursor(cc, scr_y, is_rtl, slen)
+BEGIN
+  LOCAL cur_x, cy1, cy2, cx2;
+  IF cc < 1 THEN cc := 1; END;
+  IF cc > slen + 1 THEN cc := slen + 1; END;
+  IF is_rtl THEN
+    cur_x := R_X_RIGHT - (cc - 1) * R_ADV_HEB;
+  ELSE
+    cur_x := R_X_LEFT + (cc - 1) * R_ADV_LTR;
+  END;
+  IF cur_x < R_X_LEFT THEN cur_x := R_X_LEFT; END;
+  IF cur_x > R_X_RIGHT THEN cur_x := R_X_RIGHT; END;
+  cy1 := scr_y + 1;
+  cy2 := scr_y + R_LINE_H - 2;
+  cx2 := cur_x + 1;
+  IF cx2 > 319 THEN cx2 := 319; END;
+  RECT_P(cur_x, cy1, cx2, cy2, R_COL_CUR, R_COL_CUR);
+END;
+
+
+// ----------------------------------------------------------------
+// REND_DrawDoc -- render the visible document viewport
+//
+// cl, cc : logical cursor position (1-based line, column)
+//
+// Steps:
+//   1. REND_ClearArea() -- white background
+//   2. For each visible line (R_VIEW_TOP .. R_VIEW_TOP+R_LINES_VIS-1):
+//      a. Active line (abs_line == cl): draw R_COL_ACT highlight rect
+//      b. REND_DrawLine(txt, scr_y, is_rtl)
+//      c. Active line: REND_DrawCursor(cc, scr_y, is_rtl, slen)
+//   3. Stops (EXIT) if abs_line > document line count
+// ----------------------------------------------------------------
+EXPORT REND_DrawDoc(cl, cc)
+BEGIN
+  LOCAL lcount, vis_idx, abs_line, scr_y, txt, is_rtl, slen;
+  REND_ClearArea();
+  lcount := TE_LineCount();
+  FOR vis_idx FROM 1 TO R_LINES_VIS DO
+    abs_line := R_VIEW_TOP + vis_idx - 1;
+    IF abs_line <= lcount THEN
+      scr_y  := R_Y_TOP + (vis_idx - 1) * R_LINE_H;
+      txt    := TE_GetLine(abs_line);
+      is_rtl := REND_LineDir(txt);
+      IF abs_line == cl THEN
+        RECT_P(0, scr_y, 319, scr_y + R_LINE_H - 1, R_COL_ACT, R_COL_ACT);
+      END;
+      REND_DrawLine(txt, scr_y, is_rtl);
+      IF abs_line == cl THEN
+        slen := SIZE(txt);
+        REND_DrawCursor(cc, scr_y, is_rtl, slen);
+      END;
+    END;
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// REND_DrawStatus -- draw header bar with scenario/status label
+// Renders dark bar at y=0..15 with white text.
+// ----------------------------------------------------------------
+EXPORT REND_DrawStatus(label)
+BEGIN
+  RECT_P(0, 0, 319, 15, RGB(40,40,40), RGB(40,40,40));
+  TEXTOUT_P(label, 4, 3, 1, RGB(255,255,255));
+END;
