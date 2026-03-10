@@ -1,0 +1,145 @@
+// SPIKE-05: Document Size Performance Test
+// PURPOSE: Verify that list operations on a 200-line × 80-char document
+//          complete within acceptable time limits (<50ms per operation).
+//
+// HOW TO RUN: Transfer to HP Prime / Emulator, run TestDocPerf() from Home screen.
+//             Observe reported times and accept/reject criteria.
+// RECORD RESULTS IN: research/spike-results.md
+//
+// SUCCESS: All operations complete in < 50ms (no visible lag)
+// FAILURE: Any operation shows > 200ms or causes "Running..." delay
+
+EXPORT TestDocPerf()
+BEGIN
+  LOCAL white, black, blue, grey, green, red;
+  white := RGB(255, 255, 255);
+  black := RGB(0, 0, 0);
+  blue  := RGB(0, 80, 200);
+  grey  := RGB(180, 180, 180);
+  green := RGB(0, 160, 0);
+  red   := RGB(200, 0, 0);
+
+  FILLRECT_P(G0, 0, 0, 319, 219, white);
+  TEXTOUT_P("SPIKE-05: Document Performance Test", G0, 2, 2, 1, black);
+  LINE_P(0, 14, 319, 14, grey);
+  TEXTOUT_P("Building 200-line test document...", G0, 2, 20, 1, blue);
+
+  // --- Build test document: 200 lines, each 80 characters ---
+  LOCAL doc, line_str, i, j;
+  LOCAL HEBREW_A := CHAR(0x05D0);
+  LOCAL HEBREW_B := CHAR(0x05D1);
+  LOCAL HEBREW_C := CHAR(0x05D2);
+
+  // Build a representative 80-char line (mix of Hebrew, Cyrillic, ASCII)
+  line_str := "";
+  FOR j FROM 1 TO 20 DO
+    line_str := line_str + HEBREW_A + HEBREW_B + HEBREW_C + "Abc";
+  END;
+  // line_str is now exactly 80 characters (20 × 4 chars... actually 20×6 = 120; cap to 80)
+  line_str := MID(line_str, 1, 80);
+
+  doc := {};
+  FOR i FROM 1 TO 200 DO
+    doc := CONCAT(doc, {line_str});
+  END;
+
+  TEXTOUT_P("Document built: 200 lines × 80 chars.", G0, 2, 32, 1, grey);
+  TEXTOUT_P("Total chars: " + STRING(SIZE(doc) * 80), G0, 2, 42, 1, grey);
+
+  // ---- TEST 1: Insert one character at line 100, column 40 ----
+  TEXTOUT_P("Test 1: Insert char at line 100, col 40...", G0, 2, 58, 1, blue);
+  LOCAL t1_start, t1_end;
+  LOCAL target_line := 100;
+  LOCAL target_col  := 40;
+  LOCAL orig_line, left_part, right_part, new_line;
+
+  // Timestamp via loop counter (HP Prime has no millisecond timer in PPL)
+  // We use a tight loop counter as a proxy
+  LOCAL counter := 0;
+  t1_start := TICKS; // Note: TICKS may not be available in all firmware; use IF check
+  orig_line  := doc(target_line);
+  left_part  := MID(orig_line, 1, target_col);
+  right_part := MID(orig_line, target_col + 1, SIZE(orig_line) - target_col);
+  doc(target_line) := left_part + CHAR(0x05E9) + right_part; // Insert Shin
+  t1_end := TICKS;
+
+  LOCAL t1_ms := t1_end - t1_start;
+  IF t1_ms < 50 THEN
+    TEXTOUT_P("PASS: Insert ~" + STRING(t1_ms) + "ms", G0, 2, 70, 1, green);
+  ELSE
+    TEXTOUT_P("FAIL: Insert " + STRING(t1_ms) + "ms (>50ms)", G0, 2, 70, 1, red);
+  END;
+
+  // ---- TEST 2: Search full document for a substring ----
+  TEXTOUT_P("Test 2: Search 200 lines for substring...", G0, 2, 84, 1, blue);
+  LOCAL t2_start := TICKS;
+  LOCAL found_line := -1;
+  LOCAL found_col  := -1;
+  LOCAL query := CHAR(0x05D2) + CHAR(0x05D0) + CHAR(0x05D1); // Gimel + Alef + Bet
+  FOR i FROM 1 TO SIZE(doc) DO
+    LOCAL pos := POS(doc(i), query);
+    IF pos > 0 THEN
+      found_line := i;
+      found_col  := pos - 1;
+      BREAK;
+    END;
+  END;
+  LOCAL t2_end := TICKS;
+  LOCAL t2_ms := t2_end - t2_start;
+
+  IF t2_ms < 50 THEN
+    TEXTOUT_P("PASS: Search ~" + STRING(t2_ms) + "ms (found L" + STRING(found_line) + ")", G0, 2, 96, 1, green);
+  ELSE
+    TEXTOUT_P("FAIL: Search " + STRING(t2_ms) + "ms (>50ms)", G0, 2, 96, 1, red);
+  END;
+
+  // ---- TEST 3: Serialize document to single string (backup copy) ----
+  TEXTOUT_P("Test 3: Serialize doc to single string...", G0, 2, 112, 1, blue);
+  LOCAL t3_start := TICKS;
+  LOCAL serialized := "";
+  FOR i FROM 1 TO SIZE(doc) DO
+    serialized := serialized + doc(i) + CHAR(10); // newline separator
+  END;
+  LOCAL t3_end := TICKS;
+  LOCAL t3_ms := t3_end - t3_start;
+  LOCAL ser_len := SIZE(serialized);
+
+  IF t3_ms < 200 THEN
+    TEXTOUT_P("PASS: Serialize ~" + STRING(t3_ms) + "ms, len=" + STRING(ser_len), G0, 2, 124, 1, green);
+  ELSE
+    TEXTOUT_P("FAIL: Serialize " + STRING(t3_ms) + "ms (>200ms)", G0, 2, 124, 1, red);
+  END;
+
+  // ---- TEST 4: Line deletion (simulate backspace at line start) ----
+  TEXTOUT_P("Test 4: Line merge (backspace at line start)...", G0, 2, 140, 1, blue);
+  LOCAL t4_start := TICKS;
+  // Merge line 101 into line 100 (line 101 was modified in Test 1)
+  LOCAL prev_l := doc(100);
+  LOCAL curr_l := doc(101);
+  doc(100) := prev_l + curr_l;
+  // Remove line 101: rebuild list without element 101
+  LOCAL new_doc := {};
+  FOR i FROM 1 TO SIZE(doc) DO
+    IF i ≠ 101 THEN
+      new_doc := CONCAT(new_doc, {doc(i)});
+    END;
+  END;
+  doc := new_doc;
+  LOCAL t4_end := TICKS;
+  LOCAL t4_ms := t4_end - t4_start;
+
+  IF t4_ms < 100 THEN
+    TEXTOUT_P("PASS: Line merge ~" + STRING(t4_ms) + "ms, lines=" + STRING(SIZE(doc)), G0, 2, 152, 1, green);
+  ELSE
+    TEXTOUT_P("FAIL: Line merge " + STRING(t4_ms) + "ms (>100ms)", G0, 2, 152, 1, red);
+  END;
+
+  // ---- Summary ----
+  LINE_P(0, 168, 319, 168, grey);
+  TEXTOUT_P("Note: TICKS unit may be ms or other on this firmware.", G0, 2, 172, 1, grey);
+  TEXTOUT_P("Verify by timing manually if TICKS unavailable.", G0, 2, 182, 1, grey);
+  TEXTOUT_P("Final doc lines: " + STRING(SIZE(doc)), G0, 2, 194, 1, black);
+  TEXTOUT_P("Press ESC or tap to exit.", G0, 2, 206, 1, grey);
+
+  FREEZE;
+END;

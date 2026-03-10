@@ -1,0 +1,156 @@
+// SPIKE-04: Custom GROB Glyph Rendering Pipeline
+// PURPOSE: Validate that Hebrew-like glyphs can be encoded as GROB bitmaps,
+//          blitted to screen, and achieve acceptable visual quality and speed.
+//          This is the fallback pipeline if Spike-01 fails.
+//
+// HOW TO RUN: Transfer to HP Prime / Emulator, run TestGrobGlyph() from Home.
+// RECORD RESULTS IN: research/spike-results.md
+//
+// SUCCESS: Glyphs render cleanly; 30-glyph line blits in < 100ms (visible immediately)
+// FAILURE: GROB errors; visible pixel artifacts; slow rendering
+
+// Helper: draws a pixel pattern for a test "Hebrew-like" glyph into a 12x18 GROB
+// This is a manually designed Alef-lookalike (not actual Unicode font)
+LOCAL PROCEDURE DRAW_ALEF_GLYPH(grob)
+BEGIN
+  // Clear glyph background (transparent = magenta as chroma key)
+  LOCAL trans := RGB(255, 0, 255);
+  DIMGROB_P(grob, 12, 18, trans);
+
+  // Draw a simple Alef-like shape using SETPIX_P
+  // Diagonal line from top-right to bottom-left (main stroke)
+  LOCAL black := RGB(0, 0, 0);
+  LOCAL r, c;
+  // Main diagonal (approximated)
+  FOR r FROM 1 TO 14 DO
+    c := 10 - r; // Slope ~1
+    IF c >= 0 AND c <= 11 THEN
+      SETPIX_P(grob, c, r, black);
+      IF c+1 <= 11 THEN SETPIX_P(grob, c+1, r, black); END;
+    END;
+  END;
+  // Right arm (upper right)
+  FOR c FROM 7 TO 11 DO
+    SETPIX_P(grob, c, 2, black);
+    SETPIX_P(grob, c, 3, black);
+  END;
+  // Left arm (lower left)
+  FOR c FROM 1 TO 5 DO
+    SETPIX_P(grob, c, 14, black);
+    SETPIX_P(grob, c, 15, black);
+  END;
+END;
+
+// Helper: draws a simple Bet-like shape
+LOCAL PROCEDURE DRAW_BET_GLYPH(grob)
+BEGIN
+  LOCAL trans := RGB(255, 0, 255);
+  LOCAL black := RGB(0, 0, 0);
+  DIMGROB_P(grob, 12, 18, trans);
+  // Horizontal top bar
+  LOCAL c;
+  FOR c FROM 1 TO 10 DO
+    SETPIX_P(grob, c, 2, black);
+    SETPIX_P(grob, c, 3, black);
+  END;
+  // Horizontal bottom bar
+  FOR c FROM 1 TO 10 DO
+    SETPIX_P(grob, c, 14, black);
+    SETPIX_P(grob, c, 15, black);
+  END;
+  // Right vertical
+  LOCAL r;
+  FOR r FROM 2 TO 15 DO
+    SETPIX_P(grob, 9, r, black);
+    SETPIX_P(grob, 10, r, black);
+  END;
+  // Bottom foot (dot-like protrusion)
+  SETPIX_P(grob, 5, 16, black);
+  SETPIX_P(grob, 5, 17, black);
+  SETPIX_P(grob, 6, 16, black);
+END;
+
+EXPORT TestGrobGlyph()
+BEGIN
+  LOCAL white, black, blue, grey, trans, red;
+  white := RGB(255, 255, 255);
+  black := RGB(0, 0, 0);
+  blue  := RGB(0, 80, 200);
+  grey  := RGB(200, 200, 200);
+  trans := RGB(255, 0, 255);  // Chroma key (transparent color)
+  red   := RGB(200, 0, 0);
+
+  FILLRECT_P(G0, 0, 0, 319, 219, white);
+  TEXTOUT_P("SPIKE-04: Custom GROB Glyph Test", G0, 2, 2, 1, black);
+  LINE_P(0, 14, 319, 14, grey);
+
+  // --- Test 1: Build and render single Alef glyph ---
+  TEXTOUT_P("Test 1: Single Alef glyph (custom bitmap)", G0, 2, 18, 1, blue);
+  DRAW_ALEF_GLYPH(G1);
+  // Blit Alef to screen at (30, 32) with transparency
+  BLIT_P(G0, 30, 32, 42, 50, G1, 0, 0, 12, 18, trans);
+  TEXTOUT_P("← Alef-like glyph (12x18px)", G0, 50, 38, 1, grey);
+
+  // Draw the raw glyph grid (scaled 2x for inspection)
+  TEXTOUT_P("2x zoom:", G0, 150, 30, 1, grey);
+  LOCAL r, c, pix;
+  FOR r FROM 0 TO 17 DO
+    FOR c FROM 0 TO 11 DO
+      pix := GETPIX_P(G1, c, r);
+      IF pix ≠ trans THEN
+        FILLRECT_P(G0, 155 + c*2, 40 + r*2, 155 + c*2+1, 40 + r*2+1, black);
+      ELSE
+        FILLRECT_P(G0, 155 + c*2, 40 + r*2, 155 + c*2+1, 40 + r*2+1, white);
+      END;
+    END;
+  END;
+  RECT_P(G0, 154, 39, 178, 77, grey, -1);  // Border around zoom
+
+  // --- Test 2: Build Bet glyph ---
+  TEXTOUT_P("Test 2: Bet glyph", G0, 2, 80, 1, blue);
+  DRAW_BET_GLYPH(G2);
+  BLIT_P(G0, 30, 92, 42, 110, G2, 0, 0, 12, 18, trans);
+  TEXTOUT_P("← Bet-like glyph", G0, 50, 98, 1, grey);
+
+  // --- Test 3: Render a "word" of 8 custom glyphs in a row (RTL = right-to-left) ---
+  TEXTOUT_P("Test 3: 8 glyphs in a row (RTL layout)", G0, 2, 115, 1, blue);
+  // Alternate Alef and Bet glyphs to simulate a word
+  LOCAL i, x_pos;
+  x_pos := 310; // Start from right (RTL)
+  FOR i FROM 1 TO 8 DO
+    x_pos := x_pos - 14; // 12px glyph + 2px gap
+    IF i MOD 2 == 1 THEN
+      BLIT_P(G0, x_pos, 128, x_pos+12, 146, G1, 0, 0, 12, 18, trans); // Alef
+    ELSE
+      BLIT_P(G0, x_pos, 128, x_pos+12, 146, G2, 0, 0, 12, 18, trans); // Bet
+    END;
+  END;
+  TEXTOUT_P("^ 8 glyphs right-to-left (112px wide)", G0, 2, 150, 1, grey);
+
+  // --- Test 4: Performance: blit 30 glyphs, measure visually ---
+  TEXTOUT_P("Test 4: 30-glyph line (perf test)", G0, 2, 162, 1, blue);
+  x_pos := 4;
+  FOR i FROM 1 TO 30 DO
+    IF i MOD 2 == 1 THEN
+      BLIT_P(G0, x_pos, 174, x_pos+9, 192, G1, 0, 0, 12, 18, trans);
+    ELSE
+      BLIT_P(G0, x_pos, 174, x_pos+9, 192, G2, 0, 0, 12, 18, trans);
+    END;
+    x_pos := x_pos + 10;
+  END;
+  TEXTOUT_P("30 glyphs blitted above (was it fast?)", G0, 2, 196, 1, grey);
+
+  // --- Test 5: BLIT_P subregion test (glyph atlas approach) ---
+  // Build a 2-glyph atlas in G3: [Alef][Bet] side by side (24x18px)
+  TEXTOUT_P("Test 5: Atlas subregion blit", G0, 2, 207, 1, blue);
+  DIMGROB_P(G3, 24, 18, trans);
+  // Copy Alef into left half of G3
+  BLIT_P(G3, 0, 0, 12, 18, G1, 0, 0, 12, 18);
+  // Copy Bet into right half of G3
+  BLIT_P(G3, 12, 0, 24, 18, G2, 0, 0, 12, 18);
+  // Now blit just Bet from atlas (right half) to screen
+  BLIT_P(G0, 200, 207, 212, 219, G3, 12, 0, 24, 18, trans);
+  TEXTOUT_P("← Bet from atlas", G0, 215, 209, 1, grey);
+
+  FREEZE;
+END;

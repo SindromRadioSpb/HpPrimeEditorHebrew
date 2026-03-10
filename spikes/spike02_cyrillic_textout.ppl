@@ -1,0 +1,73 @@
+// SPIKE-02: Cyrillic / Russian Glyph Rendering via TEXTOUT_P
+// PURPOSE: Confirm HP Prime system font renders Cyrillic (Russian) glyphs correctly.
+// HOW TO RUN: Transfer to HP Prime / Emulator, run TestCyrillic() from Home screen.
+// RECORD RESULTS IN: research/spike-results.md
+//
+// SUCCESS: All Cyrillic glyphs appear as recognizable Russian letters
+// FAILURE: Garbled, boxes, or question marks
+
+EXPORT TestCyrillic()
+BEGIN
+  LOCAL white, black, blue, grey, red;
+  white := RGB(255, 255, 255);
+  black := RGB(0, 0, 0);
+  blue  := RGB(0, 0, 200);
+  grey  := RGB(180, 180, 180);
+  red   := RGB(200, 0, 0);
+
+  FILLRECT_P(G0, 0, 0, 319, 219, white);
+  TEXTOUT_P("SPIKE-02: Cyrillic TEXTOUT Test", G0, 2, 2, 1, black);
+  LINE_P(0, 14, 319, 14, grey);
+
+  // --- Test 1: Full Russian alphabet uppercase ---
+  TEXTOUT_P("Uppercase Cyrillic:", G0, 2, 18, 1, blue);
+  // А=0x0410 ... Я=0x042F (32 letters)
+  LOCAL i, x, y;
+  x := 4; y := 30;
+  FOR i FROM 0x0410 TO 0x042F DO
+    TEXTOUT_P(CHAR(i), G0, x, y, 2, black);
+    x := x + 16;
+    IF x > 300 THEN
+      x := 4;
+      y := y + 20;
+    END;
+  END;
+  // Ё = U+0401
+  TEXTOUT_P(CHAR(0x0401), G0, x, y, 2, black);
+
+  // --- Test 2: Full Russian alphabet lowercase ---
+  y := y + 24;
+  TEXTOUT_P("Lowercase Cyrillic:", G0, 2, y, 1, blue);
+  y := y + 12;
+  x := 4;
+  FOR i FROM 0x0430 TO 0x044F DO
+    TEXTOUT_P(CHAR(i), G0, x, y, 2, black);
+    x := x + 16;
+    IF x > 300 THEN
+      x := 4;
+      y := y + 20;
+    END;
+  END;
+  // ё = U+0451
+  TEXTOUT_P(CHAR(0x0451), G0, x, y, 2, black);
+  y := y + 20;
+
+  // --- Test 3: Word strings ---
+  TEXTOUT_P("Words:", G0, 2, y, 1, blue);
+  y := y + 12;
+  TEXTOUT_P("Привет мир", G0, 4, y, 3, black);
+  y := y + 20;
+  TEXTOUT_P("Редактор текста", G0, 4, y, 2, black);
+  y := y + 16;
+
+  // --- Test 4: Mixed Cyrillic + Latin + Digits ---
+  TEXTOUT_P("Mixed:", G0, 2, y, 1, blue);
+  y := y + 12;
+  TEXTOUT_P("HP Prime 123 Текст", G0, 4, y, 2, black);
+  y := y + 18;
+
+  // --- Test 5: Specific known-problematic chars ---
+  TEXTOUT_P("Ё ё Ъ ъ Ы ы Э э Ю ю Я я", G0, 4, y, 2, red);
+
+  FREEZE;
+END;

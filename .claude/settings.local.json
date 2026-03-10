@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:literature.hpcalc.org)",
+      "WebFetch(domain:en.hpprime.club)",
+      "WebFetch(domain:www.hpcalc.org)",
+      "WebFetch(domain:wiki.tiplanet.org)",
+      "WebFetch(domain:www.hpmuseum.org)",
+      "WebFetch(domain:tiplanet.org)",
+      "WebFetch(domain:www.cemetech.net)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:codewalr.us)",
+      "WebFetch(domain:hpofficesupply.com)",
+      "WebFetch(domain:holyjoe.net)",
+      "WebFetch(domain:edspi31415.blogspot.com)",
+      "WebFetch(domain:h10032.www1.hp.com)",
+      "WebFetch(domain:udel.edu)",
+      "WebFetch(domain:archived.hpcalc.org)",
+      "Bash(\"C:/Program Files/HP/HP Prime Virtual Calculator/HPPrime.exe\":*)",
+      "Bash(cmd:*)",
+      "Bash(python3:*)",
+      "Bash(\"C:/Users/Win10_Game_OS/Documents/HP Connectivity Kit/Calculators/HP:*)",
+      "Bash(\"C:/Users/Win10_Game_OS/Documents/HP Connectivity Kit/Calculators/HP Prime/Spike05_DocPerf.hpprgm\":*)",
+      "Bash(\"C:/Users/Win10_Game_OS/Documents/HP Connectivity Kit/Calculators/HP Prime/Spike01_Hebrew.hpprgm\":*)",
+      "Bash(\"J:/Project_Vibe/HpPrimeEditor/research/spike-results.md\":*)",
+      "Bash(\"C:/Users/Win10_Game_OS/Documents/HP Connectivity Kit/Calculators/HP Prime/Spike05c_Debug.hpprgm\":*)",
+      "Bash(\"C:/Users/Win10_Game_OS/Documents/HP Connectivity Kit/Calculators/HP Prime/Spike05d_Min.hpprgm\":*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

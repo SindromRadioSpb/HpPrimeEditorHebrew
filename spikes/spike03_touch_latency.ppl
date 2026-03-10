@@ -1,0 +1,98 @@
+// SPIKE-03: Touch Event Loop Latency
+// PURPOSE: Measure tap-to-display response time; confirm event loop handles rapid input.
+// HOW TO RUN: Transfer to HP Prime / Emulator, run TestTouchLatency() from Home screen.
+//             Tap the big blue button repeatedly; observe tap counter and any missed taps.
+// RECORD RESULTS IN: research/spike-results.md
+//
+// SUCCESS: Tap counter increments on every tap; no visible lag > ~200ms
+// FAILURE: Missed taps; visible lag > 300ms; hung loop
+
+EXPORT TestTouchLatency()
+BEGIN
+  LOCAL white, black, blue, grey, green, red;
+  white := RGB(255, 255, 255);
+  black := RGB(0, 0, 0);
+  blue  := RGB(0, 80, 200);
+  grey  := RGB(200, 200, 200);
+  green := RGB(0, 180, 0);
+  red   := RGB(200, 0, 0);
+
+  LOCAL tap_count, last_x, last_y, event, ev_type;
+  LOCAL total_events, touch_events, key_events;
+  tap_count    := 0;
+  total_events := 0;
+  touch_events := 0;
+  key_events   := 0;
+  last_x := 0;
+  last_y := 0;
+
+  // Draw instructions
+  FILLRECT_P(G0, 0, 0, 319, 219, white);
+  TEXTOUT_P("SPIKE-03: Touch Latency", G0, 2, 2, 1, black);
+  TEXTOUT_P("Tap BIG BUTTON rapidly. ESC to exit.", G0, 2, 14, 1, grey);
+  TEXTOUT_P("Press ESC (physical) to quit.", G0, 2, 24, 1, grey);
+  LINE_P(0, 34, 319, 34, grey);
+
+  // Draw big tap button (touch target)
+  FILLRECT_P(G0, 20, 50, 200, 110, blue);
+  TEXTOUT_P("TAP HERE", G0, 60, 72, 4, white);
+
+  // Instructions area
+  TEXTOUT_P("Tap count:", G0, 2, 125, 2, black);
+  TEXTOUT_P("Total events:", G0, 2, 145, 1, grey);
+  TEXTOUT_P("Last touch:", G0, 2, 160, 1, grey);
+  TEXTOUT_P("ESC or key 4 to exit", G0, 2, 200, 1, grey);
+
+  // Main event loop
+  REPEAT
+    event := WAIT(-1);
+    total_events := total_events + 1;
+
+    IF TYPE(event) == 6 THEN
+      // Touch event (type 6 = list in PPL)
+      touch_events := touch_events + 1;
+      ev_type := event(1);
+      IF SIZE(event) >= 2 THEN
+        last_x := event(2)(1);
+        last_y := event(2)(2);
+      END;
+
+      // Only count Click events (type 3) to avoid triple-counting per tap
+      IF ev_type == 3 THEN
+        // Check if tap is within button bounds
+        IF last_x >= 20 AND last_x <= 200 AND last_y >= 50 AND last_y <= 110 THEN
+          tap_count := tap_count + 1;
+          // Flash button
+          FILLRECT_P(G0, 20, 50, 200, 110, green);
+          TEXTOUT_P("TAP HERE", G0, 60, 72, 4, white);
+          BLIT_P(G0, 20, 50, 200, 110, G0, 20, 50, 200, 110);
+        END;
+      END;
+
+    ELSE
+      // Key event
+      key_events := key_events + 1;
+      // ESC key (key code 4) or Apps key exits
+      IF event == 4 THEN
+        BREAK;
+      END;
+    END;
+
+    // Update display
+    // Restore button color
+    FILLRECT_P(G0, 20, 50, 200, 110, blue);
+    TEXTOUT_P("TAP HERE", G0, 60, 72, 4, white);
+
+    // Clear and redraw counter area
+    FILLRECT_P(G0, 100, 120, 319, 195, white);
+    TEXTOUT_P(STRING(tap_count), G0, 130, 125, 4, red);
+    TEXTOUT_P("Total events: "+STRING(total_events), G0, 100, 145, 1, grey);
+    TEXTOUT_P("Touch events: "+STRING(touch_events), G0, 100, 157, 1, grey);
+    TEXTOUT_P("Key events: "+STRING(key_events), G0, 100, 169, 1, grey);
+    TEXTOUT_P("Last xy: "+STRING(last_x)+","+STRING(last_y), G0, 100, 181, 1, grey);
+
+  UNTIL 0;  // Loop forever until BREAK
+
+  // Final summary
+  FREEZE;
+END;

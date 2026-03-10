@@ -1,0 +1,95 @@
+// SPIKE-01: Hebrew Glyph Rendering via TEXTOUT_P
+// PURPOSE: Determine if HP Prime system font renders Hebrew Unicode glyphs.
+// HOW TO RUN: Transfer to HP Prime / Emulator, run TestHebrew() from Home screen.
+// RECORD RESULTS IN: research/spike-results.md
+//
+// SUCCESS: All Hebrew glyphs appear as recognizable Hebrew letters (not boxes or ?)
+// FAILURE: Any glyph appears as box, question mark, or garbled pixels
+
+EXPORT TestHebrew()
+BEGIN
+  LOCAL white, black, red, green, blue, grey;
+  white := RGB(255, 255, 255);
+  black := RGB(0, 0, 0);
+  red   := RGB(200, 0, 0);
+  green := RGB(0, 160, 0);
+  blue  := RGB(0, 0, 200);
+  grey  := RGB(200, 200, 200);
+
+  // Clear screen
+  FILLRECT_P(G0, 0, 0, 319, 219, white);
+
+  // --- Title ---
+  TEXTOUT_P("SPIKE-01: Hebrew TEXTOUT Test", G0, 2, 2, 1, black);
+  LINE_P(0, 14, 319, 14, grey);
+
+  // --- Row 1: Individual Hebrew letters (Alef through Yod) ---
+  TEXTOUT_P("Single glyphs:", G0, 2, 18, 1, blue);
+
+  // Alef = U+05D0
+  TEXTOUT_P(CHAR(0x05D0), G0, 10,  32, 3, black);
+  // Bet = U+05D1
+  TEXTOUT_P(CHAR(0x05D1), G0, 30,  32, 3, black);
+  // Gimel = U+05D2
+  TEXTOUT_P(CHAR(0x05D2), G0, 50,  32, 3, black);
+  // Dalet = U+05D3
+  TEXTOUT_P(CHAR(0x05D3), G0, 70,  32, 3, black);
+  // He = U+05D4
+  TEXTOUT_P(CHAR(0x05D4), G0, 90,  32, 3, black);
+  // Vav = U+05D5
+  TEXTOUT_P(CHAR(0x05D5), G0, 110, 32, 3, black);
+  // Zayin = U+05D6
+  TEXTOUT_P(CHAR(0x05D6), G0, 130, 32, 3, black);
+  // Chet = U+05D7
+  TEXTOUT_P(CHAR(0x05D7), G0, 150, 32, 3, black);
+  // Tet = U+05D8
+  TEXTOUT_P(CHAR(0x05D8), G0, 170, 32, 3, black);
+  // Yod = U+05D9
+  TEXTOUT_P(CHAR(0x05D9), G0, 190, 32, 3, black);
+
+  // Label row 1
+  TEXTOUT_P("אבגדהוזחטי (expect)", G0, 10, 50, 1, grey);
+
+  // --- Row 2: More Hebrew letters (Kaf through Shin) ---
+  TEXTOUT_P(CHAR(0x05DB), G0, 10,  68, 3, black); // Kaf
+  TEXTOUT_P(CHAR(0x05DC), G0, 30,  68, 3, black); // Lamed
+  TEXTOUT_P(CHAR(0x05DE), G0, 50,  68, 3, black); // Mem
+  TEXTOUT_P(CHAR(0x05E0), G0, 70,  68, 3, black); // Nun
+  TEXTOUT_P(CHAR(0x05E1), G0, 90,  68, 3, black); // Samech
+  TEXTOUT_P(CHAR(0x05E2), G0, 110, 68, 3, black); // Ayin
+  TEXTOUT_P(CHAR(0x05E4), G0, 130, 68, 3, black); // Pe
+  TEXTOUT_P(CHAR(0x05E6), G0, 150, 68, 3, black); // Tsadi
+  TEXTOUT_P(CHAR(0x05E7), G0, 170, 68, 3, black); // Qof
+  TEXTOUT_P(CHAR(0x05E9), G0, 190, 68, 3, black); // Shin
+  TEXTOUT_P(CHAR(0x05EA), G0, 210, 68, 3, black); // Tav
+  TEXTOUT_P("כלמנסעפצקשת (expect)", G0, 10, 86, 1, grey);
+
+  // --- Row 3: Word "Shalom" in Hebrew (reversed for visual RTL) ---
+  // שלום = Shin(05E9) Lamed(05DC) Vav(05D5) Mem(05DE)
+  // Logical: שלום  Visual (reversed): םולש
+  TEXTOUT_P("Word test (reversed):", G0, 2, 104, 1, blue);
+  TEXTOUT_P(CHAR(0x05DE)+CHAR(0x05D5)+CHAR(0x05DC)+CHAR(0x05E9), G0, 10, 118, 3, black);
+  TEXTOUT_P("Should read: שלום", G0, 10, 136, 1, grey);
+
+  // --- Row 4: Mixed Hebrew + Latin ---
+  TEXTOUT_P("Mixed:", G0, 2, 152, 1, blue);
+  TEXTOUT_P("Hi "+CHAR(0x05E9)+CHAR(0x05DC)+CHAR(0x05D5)+CHAR(0x05DE), G0, 40, 152, 2, black);
+
+  // --- Row 5: Character width measurement ---
+  // Draw 10 Hebrew chars in a row; measure total width visually
+  TEXTOUT_P("Width test (10 chars):", G0, 2, 172, 1, blue);
+  LOCAL i, x_pos;
+  x_pos := 10;
+  FOR i FROM 0x05D0 TO 0x05D9 DO
+    TEXTOUT_P(CHAR(i), G0, x_pos, 186, 3, black);
+    x_pos := x_pos + 12; // Expected: ~9-12px per char
+  END;
+  // Draw tick marks every 10px for measurement
+  FOR i FROM 0 TO 10 DO
+    LINE_P(10 + i*12, 200, 10 + i*12, 205, red);
+  END;
+  TEXTOUT_P("Measure pixel width per glyph", G0, 2, 207, 1, grey);
+
+  // Hold display
+  FREEZE;
+END;

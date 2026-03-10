@@ -1,0 +1,98 @@
+test_glyph_visual;
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// Visual test: renders all 22 Hebrew glyphs from the atlas.
+// PREREQUISITES: glyph_hebrew.hpprgm must be loaded first.
+// HOW TO RUN: test_glyph_visual() from Home screen.
+// EXPECTED: 22 distinct glyph shapes visible in a 2-row grid,
+//           each labeled with its index and letter name.
+// ================================================================
+
+EXPORT test_glyph_visual()
+BEGIN
+  LOCAL blk, gry, blu, grn, wht;
+  LOCAL idx, px, py, lbl;
+  LOCAL names;
+
+  blk := RGB(0, 0, 0);
+  gry := RGB(180, 180, 180);
+  blu := RGB(0, 80, 200);
+  grn := RGB(0, 140, 0);
+  wht := RGB(255, 255, 255);
+
+  // Build atlas in G1
+  HEB_Init();
+
+  RECT_P(0, 0, 319, 219, wht, wht);
+  TEXTOUT_P("Hebrew Glyph Atlas  (22 letters)", 2, 2, 1, blu);
+  LINE_P(G0, 0, 13, 319, 13, gry);
+
+  // Letter names for labels (abbreviated)
+  names := {"Alf","Bet","Gml","Dal","He ","Vav","Zyn","Het","Tet","Yod",
+            "Kaf","Lmd","Mem","Nun","Smk","Ayn","Pe ","Tsd","Qof","Rsh",
+            "Shn","Tav"};
+
+  // Row 1: glyphs 1-11, y=20 for glyph, y=40 for label
+  FOR idx FROM 1 TO 11 DO
+    px := (idx - 1) * 28 + 6;
+    py := 18;
+    // Cell border
+    RECT_P(G0, px-2, py-2, px+13, py+19, gry, wht);
+    // Blit glyph
+    HEB_Blit(idx, px, py);
+    // Index label below
+    TEXTOUT_P(STRING(idx), px, py+20, 1, blk);
+  END;
+
+  // Row 2: glyphs 12-22, y=60 for glyph, y=80 for label
+  FOR idx FROM 12 TO 22 DO
+    px := (idx - 12) * 28 + 6;
+    py := 60;
+    RECT_P(G0, px-2, py-2, px+13, py+19, gry, wht);
+    HEB_Blit(idx, px, py);
+    TEXTOUT_P(STRING(idx), px, py+20, 1, blk);
+  END;
+
+  // Name labels row 1
+  FOR idx FROM 1 TO 11 DO
+    px := (idx - 1) * 28 + 4;
+    lbl := names(idx);
+    TEXTOUT_P(lbl, px, 50, 1, gry);
+  END;
+
+  // Name labels row 2
+  FOR idx FROM 12 TO 22 DO
+    px := (idx - 12) * 28 + 4;
+    lbl := names(idx);
+    TEXTOUT_P(lbl, px, 92, 1, gry);
+  END;
+
+  // Codepoint lookup test: verify HEB_CodeToIdx
+  LINE_P(G0, 0, 105, 319, 105, gry);
+  TEXTOUT_P("CodeToIdx test:", 2, 108, 1, blk);
+  LOCAL ok, cp_test;
+  ok := 1;
+  IF HEB_CodeToIdx(1488) <> 1  THEN ok := 0; END;  // Alef=1
+  IF HEB_CodeToIdx(1514) <> 22 THEN ok := 0; END;  // Tav=22
+  IF HEB_CodeToIdx(1498) <> 11 THEN ok := 0; END;  // Kaf sofit=11
+  IF HEB_CodeToIdx(1501) <> 13 THEN ok := 0; END;  // Mem sofit=13
+  IF HEB_CodeToIdx(9999) <> 0  THEN ok := 0; END;  // unknown=0
+  IF ok THEN
+    TEXTOUT_P("Alef=1 Tav=22 KafSofit=11 MemSofit=13 Unknown=0  PASS", 2, 120, 1, grn);
+  ELSE
+    TEXTOUT_P("CodeToIdx mapping FAIL", 2, 120, 1, RGB(200,0,0));
+  END;
+
+  // Atlas position test: blit all 22 again as a compact row to check alignment
+  LINE_P(G0, 0, 135, 319, 135, gry);
+  TEXTOUT_P("Alignment strip (all 22):", 2, 138, 1, blk);
+  FOR idx FROM 1 TO 22 DO
+    px := (idx - 1) * 14 + 2;
+    HEB_Blit(idx, px, 150);
+  END;
+
+  TEXTOUT_P("Verify: all 22 glyphs distinct and properly aligned.", 2, 172, 1, gry);
+  TEXTOUT_P("Tap or ESC to exit.", 2, 185, 1, gry);
+  FREEZE;
+END;

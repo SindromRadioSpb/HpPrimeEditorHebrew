@@ -1,0 +1,388 @@
+glyph_hebrew;
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// HP Prime Hebrew-Russian Editor — Hebrew Glyph Atlas
+// Phase 1C: 22 Hebrew letter bitmaps
+//
+// ATLAS: G1 GROB, 132×36 pixels
+//   Row 0 (y=0..17):  letters 1-11  (Alef..Kaf)
+//   Row 1 (y=18..35): letters 12-22 (Lamed..Tav)
+//   Each glyph cell: 12×18 pixels
+//   Ink: RGB(0,0,0) = black
+//   Background/transparent: RGB(255,0,255) = magenta
+//
+// LETTER INDEX (1-based):
+//   1=Alef(א)  2=Bet(ב)   3=Gimel(ג)  4=Dalet(ד)  5=He(ה)
+//   6=Vav(ו)   7=Zayin(ז) 8=Het(ח)   9=Tet(ט)   10=Yod(י)
+//  11=Kaf(כ)  12=Lamed(ל) 13=Mem(מ)  14=Nun(נ)  15=Samekh(ס)
+//  16=Ayin(ע) 17=Pe(פ)   18=Tsadi(צ) 19=Qof(ק)  20=Resh(ר)
+//  21=Shin(ש) 22=Tav(ת)
+//   Final forms (ך ם ן ף ץ) map to same glyph as base form.
+//
+// PUBLIC API:
+//   HEB_Init()              — call once to build atlas in G1
+//   HEB_Blit(n, px, py)    — blit letter n (1..22) to screen at (px,py)
+//   HEB_CodeToIdx(cp)       — Unicode codepoint → letter index (0 if not Hebrew)
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// PRIVATE draw functions: each draws one glyph into G1 at offset (ox,oy)
+// Using EXPORT + __ prefix because LOCAL PROCEDURE cannot be called from EXPORT.
+// These are internal — do not call directly.
+// All coordinates are relative to (ox, oy) top-left of the glyph cell.
+// Stroke style: 2-pixel thick lines drawn as adjacent pairs.
+// ----------------------------------------------------------------
+
+EXPORT HEB__D01(ox, oy)  // Alef (א): diagonal + upper-right arm + lower-left arm
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+9, oy+2,  ox+2, oy+13, blk);   // main diagonal
+  LINE_P(G1, ox+10,oy+2,  ox+3, oy+13, blk);
+  LINE_P(G1, ox+7, oy+2,  ox+10,oy+5,  blk);   // upper right arm
+  LINE_P(G1, ox+7, oy+3,  ox+10,oy+6,  blk);
+  LINE_P(G1, ox+1, oy+12, ox+4, oy+15, blk);   // lower left arm
+  LINE_P(G1, ox+1, oy+13, ox+4, oy+16, blk);
+END;
+
+EXPORT HEB__D02(ox, oy)  // Bet (ב): top bar + right vert + bottom bar (open left)
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+14, blk);   // right vertical
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+14, blk);
+  LINE_P(G1, ox+2, oy+13, ox+10,oy+13, blk);   // bottom bar
+  LINE_P(G1, ox+2, oy+14, ox+10,oy+14, blk);
+END;
+
+EXPORT HEB__D03(ox, oy)  // Gimel (ג): right vert + top-right bar + angled bottom foot
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+8, oy+2,  ox+8, oy+14, blk);   // right vertical
+  LINE_P(G1, ox+9, oy+2,  ox+9, oy+14, blk);
+  LINE_P(G1, ox+8, oy+2,  ox+11,oy+2,  blk);   // top right bar
+  LINE_P(G1, ox+8, oy+3,  ox+11,oy+3,  blk);
+  LINE_P(G1, ox+9, oy+13, ox+11,oy+15, blk);   // bottom foot (angled right)
+  LINE_P(G1, ox+9, oy+14, ox+11,oy+16, blk);
+END;
+
+EXPORT HEB__D04(ox, oy)  // Dalet (ד): top bar + right vertical
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+4,  ox+9, oy+14, blk);   // right vertical (starts at bar)
+  LINE_P(G1, ox+10,oy+4,  ox+10,oy+14, blk);
+END;
+
+EXPORT HEB__D05(ox, oy)  // He (ה): Dalet + detached left vertical below gap
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+15, blk);   // right vertical
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+15, blk);
+  LINE_P(G1, ox+2, oy+7,  ox+2, oy+15, blk);   // left vertical (detached — gap at top)
+  LINE_P(G1, ox+3, oy+7,  ox+3, oy+15, blk);
+END;
+
+EXPORT HEB__D06(ox, oy)  // Vav (ו): small top cap + thin vertical
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+5, oy+2,  ox+9, oy+2,  blk);   // cap
+  LINE_P(G1, ox+5, oy+3,  ox+9, oy+3,  blk);
+  LINE_P(G1, ox+7, oy+2,  ox+7, oy+14, blk);   // vertical
+  LINE_P(G1, ox+8, oy+2,  ox+8, oy+14, blk);
+END;
+
+EXPORT HEB__D07(ox, oy)  // Zayin (ז): wide top bar + right vertical going low
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+1, oy+3,  ox+10,oy+3,  blk);   // top bar (wider than Dalet)
+  LINE_P(G1, ox+1, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+4,  ox+9, oy+16, blk);   // right vertical (goes lower)
+  LINE_P(G1, ox+10,oy+4,  ox+10,oy+16, blk);
+END;
+
+EXPORT HEB__D08(ox, oy)  // Het (ח): two verticals joined by top bridge
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bridge
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+2, oy+3,  ox+2, oy+15, blk);   // left vertical
+  LINE_P(G1, ox+3, oy+3,  ox+3, oy+15, blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+15, blk);   // right vertical
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+15, blk);
+END;
+
+EXPORT HEB__D09(ox, oy)  // Tet (ט): closed box with inner crossing stroke
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+2, oy+3,  ox+2, oy+14, blk);   // left
+  LINE_P(G1, ox+3, oy+3,  ox+3, oy+14, blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+14, blk);   // right
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+14, blk);
+  LINE_P(G1, ox+2, oy+13, ox+10,oy+13, blk);   // bottom
+  LINE_P(G1, ox+2, oy+14, ox+10,oy+14, blk);
+  LINE_P(G1, ox+6, oy+4,  ox+6, oy+10, blk);   // inner center vert
+  LINE_P(G1, ox+6, oy+10, ox+9, oy+10, blk);   // inner cross bar
+END;
+
+EXPORT HEB__D10(ox, oy)  // Yod (י): smallest letter — tiny dash + stub + foot
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+6, oy+3,  ox+9, oy+3,  blk);   // top dash
+  LINE_P(G1, ox+6, oy+4,  ox+9, oy+4,  blk);
+  LINE_P(G1, ox+7, oy+4,  ox+7, oy+8,  blk);   // short body
+  LINE_P(G1, ox+8, oy+4,  ox+8, oy+8,  blk);
+  LINE_P(G1, ox+7, oy+8,  ox+10,oy+10, blk);   // foot angled right
+END;
+
+EXPORT HEB__D11(ox, oy)  // Kaf (כ): top bar + right vert + shorter bottom bar
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+14, blk);   // right vertical
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+14, blk);
+  LINE_P(G1, ox+4, oy+13, ox+10,oy+13, blk);   // bottom bar (shorter)
+  LINE_P(G1, ox+4, oy+14, ox+10,oy+14, blk);
+END;
+
+EXPORT HEB__D12(ox, oy)  // Lamed (ל): tallest — hook rising above + vertical + foot
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+3, oy+0,  ox+8, oy+0,  blk);   // top hook horizontal
+  LINE_P(G1, ox+3, oy+1,  ox+8, oy+1,  blk);
+  LINE_P(G1, ox+3, oy+0,  ox+3, oy+5,  blk);   // hook left descent
+  LINE_P(G1, ox+4, oy+0,  ox+4, oy+5,  blk);
+  LINE_P(G1, ox+3, oy+5,  ox+7, oy+8,  blk);   // hook curves to main vert
+  LINE_P(G1, ox+7, oy+1,  ox+7, oy+15, blk);   // main vertical
+  LINE_P(G1, ox+8, oy+1,  ox+8, oy+15, blk);
+  LINE_P(G1, ox+8, oy+14, ox+10,oy+16, blk);   // bottom foot right
+END;
+
+EXPORT HEB__D13(ox, oy)  // Mem (מ): 3-sided box + diagonal close at lower-left
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+14, blk);   // right vertical
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+14, blk);
+  LINE_P(G1, ox+5, oy+13, ox+10,oy+13, blk);   // bottom bar (right portion)
+  LINE_P(G1, ox+5, oy+14, ox+10,oy+14, blk);
+  LINE_P(G1, ox+2, oy+4,  ox+2, oy+9,  blk);   // left vertical (upper)
+  LINE_P(G1, ox+3, oy+4,  ox+3, oy+9,  blk);
+  LINE_P(G1, ox+2, oy+9,  ox+5, oy+13, blk);   // diagonal connector
+  LINE_P(G1, ox+3, oy+9,  ox+5, oy+14, blk);
+END;
+
+EXPORT HEB__D14(ox, oy)  // Nun (נ): short top-right dash + vertical + right foot
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+6, oy+3,  ox+10,oy+3,  blk);   // top dash (right side only)
+  LINE_P(G1, ox+6, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+8, oy+3,  ox+8, oy+14, blk);   // vertical
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+14, blk);
+  LINE_P(G1, ox+9, oy+13, ox+11,oy+15, blk);   // bottom foot right
+  LINE_P(G1, ox+9, oy+14, ox+11,oy+16, blk);
+END;
+
+EXPORT HEB__D15(ox, oy)  // Samekh (ס): closed rectangle (oval-like)
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+3, oy+3,  ox+9, oy+3,  blk);   // top
+  LINE_P(G1, ox+3, oy+4,  ox+9, oy+4,  blk);
+  LINE_P(G1, ox+3, oy+13, ox+9, oy+13, blk);   // bottom
+  LINE_P(G1, ox+3, oy+14, ox+9, oy+14, blk);
+  LINE_P(G1, ox+2, oy+4,  ox+2, oy+13, blk);   // left
+  LINE_P(G1, ox+3, oy+4,  ox+3, oy+13, blk);
+  LINE_P(G1, ox+9, oy+4,  ox+9, oy+13, blk);   // right
+  LINE_P(G1, ox+10,oy+4,  ox+10,oy+13, blk);
+END;
+
+EXPORT HEB__D16(ox, oy)  // Ayin (ע): Y-shape — two arms meeting at center stem
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+1, oy+3,  ox+6, oy+9,  blk);   // left arm
+  LINE_P(G1, ox+2, oy+3,  ox+7, oy+9,  blk);
+  LINE_P(G1, ox+10,oy+3,  ox+6, oy+9,  blk);   // right arm
+  LINE_P(G1, ox+9, oy+3,  ox+5, oy+9,  blk);
+  LINE_P(G1, ox+5, oy+9,  ox+5, oy+15, blk);   // stem down
+  LINE_P(G1, ox+6, oy+9,  ox+6, oy+15, blk);
+END;
+
+EXPORT HEB__D17(ox, oy)  // Pe (פ): Kaf shape + inner nose
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+14, blk);   // right vertical
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+14, blk);
+  LINE_P(G1, ox+5, oy+13, ox+10,oy+13, blk);   // bottom bar (shorter)
+  LINE_P(G1, ox+5, oy+14, ox+10,oy+14, blk);
+  LINE_P(G1, ox+4, oy+5,  ox+7, oy+5,  blk);   // inner nose — horizontal
+  LINE_P(G1, ox+4, oy+5,  ox+4, oy+9,  blk);   // inner nose — left side
+  LINE_P(G1, ox+4, oy+9,  ox+7, oy+9,  blk);   // inner nose — bottom
+END;
+
+EXPORT HEB__D18(ox, oy)  // Tsadi (צ): two prongs meeting at stem + right foot
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+1, oy+3,  ox+5, oy+9,  blk);   // left prong
+  LINE_P(G1, ox+2, oy+3,  ox+6, oy+9,  blk);
+  LINE_P(G1, ox+10,oy+3,  ox+6, oy+9,  blk);   // right prong
+  LINE_P(G1, ox+9, oy+3,  ox+5, oy+9,  blk);
+  LINE_P(G1, ox+5, oy+9,  ox+5, oy+14, blk);   // center stem
+  LINE_P(G1, ox+6, oy+9,  ox+6, oy+14, blk);
+  LINE_P(G1, ox+6, oy+13, ox+9, oy+15, blk);   // bottom foot right
+  LINE_P(G1, ox+6, oy+14, ox+9, oy+16, blk);
+END;
+
+EXPORT HEB__D19(ox, oy)  // Qof (ק): top bar + inner vert + right vert below baseline
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+4, oy+4,  ox+4, oy+14, blk);   // inner vertical (left)
+  LINE_P(G1, ox+5, oy+4,  ox+5, oy+14, blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+17, blk);   // right vert — extends below baseline
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+17, blk);
+END;
+
+EXPORT HEB__D20(ox, oy)  // Resh (ר): top bar + right vert with soft corner
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar (same width as Dalet)
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+9, oy+4,  ox+10,oy+5,  blk);   // soft corner (1px curve)
+  LINE_P(G1, ox+9, oy+5,  ox+9, oy+15, blk);   // right vertical (slightly recessed)
+  LINE_P(G1, ox+10,oy+5,  ox+10,oy+15, blk);
+END;
+
+EXPORT HEB__D21(ox, oy)  // Shin (ש): base bar + three upward prongs
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+1, oy+13, ox+10,oy+13, blk);   // base bar
+  LINE_P(G1, ox+1, oy+14, ox+10,oy+14, blk);
+  LINE_P(G1, ox+1, oy+13, ox+1, oy+3,  blk);   // left prong
+  LINE_P(G1, ox+2, oy+13, ox+2, oy+3,  blk);
+  LINE_P(G1, ox+5, oy+13, ox+5, oy+5,  blk);   // middle prong
+  LINE_P(G1, ox+6, oy+13, ox+6, oy+5,  blk);
+  LINE_P(G1, ox+9, oy+13, ox+9, oy+3,  blk);   // right prong
+  LINE_P(G1, ox+10,oy+13, ox+10,oy+3,  blk);
+END;
+
+EXPORT HEB__D22(ox, oy)  // Tav (ת): top bar + two legs + right foot
+BEGIN
+  LOCAL blk;
+  blk := RGB(0, 0, 0);
+  LINE_P(G1, ox+2, oy+3,  ox+10,oy+3,  blk);   // top bar
+  LINE_P(G1, ox+2, oy+4,  ox+10,oy+4,  blk);
+  LINE_P(G1, ox+2, oy+3,  ox+2, oy+14, blk);   // left leg
+  LINE_P(G1, ox+3, oy+3,  ox+3, oy+14, blk);
+  LINE_P(G1, ox+9, oy+3,  ox+9, oy+14, blk);   // right leg
+  LINE_P(G1, ox+10,oy+3,  ox+10,oy+14, blk);
+  LINE_P(G1, ox+9, oy+13, ox+11,oy+15, blk);   // right foot (angled right)
+END;
+
+
+// ----------------------------------------------------------------
+// PUBLIC API
+// ----------------------------------------------------------------
+
+// Build the glyph atlas in G1. Call once at application startup.
+// After this call, G1 contains all 22 Hebrew letter bitmaps.
+// G1 must not be reused for other purposes while the editor runs.
+EXPORT HEB_Init()
+BEGIN
+  LOCAL trans;
+  trans := RGB(255, 0, 255);
+  DIMGROB_P(G1, 132, 36, trans);
+
+  // Row 0: letters 1-11 (Alef through Kaf), y=0
+  HEB__D01(0,   0);  HEB__D02(12,  0);  HEB__D03(24,  0);
+  HEB__D04(36,  0);  HEB__D05(48,  0);  HEB__D06(60,  0);
+  HEB__D07(72,  0);  HEB__D08(84,  0);  HEB__D09(96,  0);
+  HEB__D10(108, 0);  HEB__D11(120, 0);
+
+  // Row 1: letters 12-22 (Lamed through Tav), y=18
+  HEB__D12(0,   18); HEB__D13(12,  18); HEB__D14(24,  18);
+  HEB__D15(36,  18); HEB__D16(48,  18); HEB__D17(60,  18);
+  HEB__D18(72,  18); HEB__D19(84,  18); HEB__D20(96,  18);
+  HEB__D21(108, 18); HEB__D22(120, 18);
+END;
+
+// Blit Hebrew letter n (1=Alef .. 22=Tav) to screen at pixel (px, py).
+// Magenta background pixels are transparent (not drawn).
+// HEB_Init() must be called before the first blit.
+EXPORT HEB_Blit(n, px, py)
+BEGIN
+  LOCAL rw, cl, sx, sy, trans;
+  trans := RGB(255, 0, 255);
+  rw := IP((n - 1) / 11);          // 0 for letters 1-11, 1 for 12-22
+  cl := (n - 1) - rw * 11;         // 0..10 column in atlas
+  sx := cl * 12;                    // source x in G1
+  sy := rw * 18;                    // source y in G1
+  BLIT_P(G0, px, py, px+12, py+18, G1, sx, sy, sx+12, sy+18, trans);
+END;
+
+// Convert Unicode codepoint to letter index (1..22).
+// Returns 0 if codepoint is not a recognized Hebrew letter.
+// Final forms (ך ם ן ף ץ) map to the same glyph as their base form.
+EXPORT HEB_CodeToIdx(cp)
+BEGIN
+  IF cp == 1488 THEN RETURN 1;  END;  // Alef   (א)
+  IF cp == 1489 THEN RETURN 2;  END;  // Bet    (ב)
+  IF cp == 1490 THEN RETURN 3;  END;  // Gimel  (ג)
+  IF cp == 1491 THEN RETURN 4;  END;  // Dalet  (ד)
+  IF cp == 1492 THEN RETURN 5;  END;  // He     (ה)
+  IF cp == 1493 THEN RETURN 6;  END;  // Vav    (ו)
+  IF cp == 1494 THEN RETURN 7;  END;  // Zayin  (ז)
+  IF cp == 1495 THEN RETURN 8;  END;  // Het    (ח)
+  IF cp == 1496 THEN RETURN 9;  END;  // Tet    (ט)
+  IF cp == 1497 THEN RETURN 10; END;  // Yod    (י)
+  IF cp == 1498 THEN RETURN 11; END;  // Kaf sofit → Kaf glyph (ך→כ)
+  IF cp == 1499 THEN RETURN 11; END;  // Kaf    (כ)
+  IF cp == 1500 THEN RETURN 12; END;  // Lamed  (ל)
+  IF cp == 1501 THEN RETURN 13; END;  // Mem sofit → Mem glyph (ם→מ)
+  IF cp == 1502 THEN RETURN 13; END;  // Mem    (מ)
+  IF cp == 1503 THEN RETURN 14; END;  // Nun sofit → Nun glyph (ן→נ)
+  IF cp == 1504 THEN RETURN 14; END;  // Nun    (נ)
+  IF cp == 1505 THEN RETURN 15; END;  // Samekh (ס)
+  IF cp == 1506 THEN RETURN 16; END;  // Ayin   (ע)
+  IF cp == 1507 THEN RETURN 17; END;  // Pe sofit → Pe glyph (ף→פ)
+  IF cp == 1508 THEN RETURN 17; END;  // Pe     (פ)
+  IF cp == 1509 THEN RETURN 18; END;  // Tsadi sofit → Tsadi glyph (ץ→צ)
+  IF cp == 1510 THEN RETURN 18; END;  // Tsadi  (צ)
+  IF cp == 1511 THEN RETURN 19; END;  // Qof    (ק)
+  IF cp == 1512 THEN RETURN 20; END;  // Resh   (ר)
+  IF cp == 1513 THEN RETURN 21; END;  // Shin   (ש)
+  IF cp == 1514 THEN RETURN 22; END;  // Tav    (ת)
+  RETURN 0;
+END;
