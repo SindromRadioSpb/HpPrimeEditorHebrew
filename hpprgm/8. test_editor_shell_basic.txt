@@ -1,0 +1,43 @@
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// Editor Shell Test Harness  (Task 6)
+//
+// REQUIRES: all 4 modules loaded in order:
+//   1. hebrew_font_bitmap
+//   2. text_engine
+//   3. renderer
+//   4. editor_shell
+//
+// ENTRY POINTS:
+//   test_editor_shell_basic()  -- blank document, verify S1
+//   editor_shell_demo()        -- pre-loaded document, verify S2-S9
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// editor_shell_demo -- pre-loaded 6-line document
+// Line 1: LTR English
+// Line 2: RTL Hebrew (shalom)
+// Line 3: RTL Hebrew (bereshit)
+// Line 4: LTR digits/mixed
+// Line 5: empty line
+// Line 6: LTR text
+// ----------------------------------------------------------------
+EXPORT editor_shell_demo()
+BEGIN
+  LOCAL h1, h2, doc;
+  h1  := CHAR(1513)+CHAR(1500)+CHAR(1493)+CHAR(1501);
+  h2  := CHAR(1489)+CHAR(1512)+CHAR(1488)+CHAR(1513)+CHAR(1497)+CHAR(1514);
+  doc := {"Hello World", h1, h2, "Testing 123", "", "More text here"};
+  editor_shell_from(doc);
+END;
+
+
+// ----------------------------------------------------------------
+// test_editor_shell_basic -- blank document entry point
+// ----------------------------------------------------------------
+EXPORT test_editor_shell_basic()
+BEGIN
+  editor_shell();
+END;

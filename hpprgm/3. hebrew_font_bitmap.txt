@@ -1,4 +1,3 @@
-hebrew_font_bitmap;
 #pragma mode( separator(.,;) integer(h32) )
 
 // ================================================================

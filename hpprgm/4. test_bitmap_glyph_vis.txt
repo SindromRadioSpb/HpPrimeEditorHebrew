@@ -1,4 +1,3 @@
-test_bitmap_glyph_vis;
 #pragma mode( separator(.,;) integer(h32) )
 
 // ================================================================
