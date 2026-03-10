@@ -126,27 +126,26 @@ BEGIN
   END;
 
   // ---- Wrap pass: line 1:col 1 up to (not past) start position ----
-  // Only attempt if we didn't start from the very beginning
+  // Only attempt if we didn't start from the very beginning.
+  // Split into two bounded loops to avoid EXIT (EXIT is unreliable in HP PPL).
   IF start_line > 1 OR start_col > 1 THEN
-    FOR ln FROM 1 TO nlines DO
-      txt := TE_GetLine(ln);
-      IF ln == start_line THEN
-        // On the start line: only accept matches strictly before start_col
-        pos_in_sub := INSTRING(txt, SE_QUERY);
-        IF pos_in_sub > 0 AND pos_in_sub < start_col THEN
-          SE_LAST_LINE := ln;
-          SE_LAST_COL  := pos_in_sub;
-          RETURN {2, SE_LAST_LINE, SE_LAST_COL};
-        END;
-        EXIT;  // stop wrap pass at the start line
-      END;
-      // Lines before start_line: full search from col 1
+    // Part A: lines 1 .. start_line-1 -- full search, no column restriction
+    FOR ln FROM 1 TO start_line - 1 DO
+      txt        := TE_GetLine(ln);
       pos_in_sub := INSTRING(txt, SE_QUERY);
       IF pos_in_sub > 0 THEN
         SE_LAST_LINE := ln;
         SE_LAST_COL  := pos_in_sub;
         RETURN {2, SE_LAST_LINE, SE_LAST_COL};
       END;
+    END;
+    // Part B: start_line itself -- only accept match strictly before start_col
+    txt        := TE_GetLine(start_line);
+    pos_in_sub := INSTRING(txt, SE_QUERY);
+    IF pos_in_sub > 0 AND pos_in_sub < start_col THEN
+      SE_LAST_LINE := start_line;
+      SE_LAST_COL  := pos_in_sub;
+      RETURN {2, SE_LAST_LINE, SE_LAST_COL};
     END;
   END;
 
