@@ -1,0 +1,438 @@
+editor_shell;
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// HP Prime Hebrew-Russian Editor -- Editor Shell MVP  (Task 6)
+//
+// DEPENDENCIES:
+//   text_engine        (L0, TE_Init/From, TE_InsertChar, TE_Backspace,
+//                       TE_Newline, TE_MoveLeft/Right/Up/Down)
+//   renderer           (REND_Init, REND_DrawDoc, R_VIEW_TOP, R_LINES_VIS,
+//                       R_Y_TOP)
+//   hebrew_font_bitmap (loaded via REND_Init, HFB_CodeToIdx, HFB_BlitGlyph)
+//
+// SCREEN LAYOUT (320x240):
+//   y  0..15   : header bar
+//   y 16..103  : editor area when keyboard visible (4 lines x 22px)
+//   y 16..213  : editor area when keyboard hidden  (9 lines x 22px)
+//   y 107..138 : control key row  (9 keys x 35px, always at top of kbd)
+//   y 139..170 : letter row 1     (9 keys x 35px)
+//   y 171..202 : letter row 2     (9 keys x 35px)
+//   y 203..234 : letter row 3     (9 keys x 35px)
+//
+// KEYBOARD CONTROL ROW (left to right):
+//   SP  BS  ENT  <  >  ^  v  LAY  KBD
+//
+// HEBREW LETTER ROWS (codepoints in logical order):
+//   Row 1: alef(1488)..tet(1496)
+//   Row 2: yod(1497)..samekh(1505)
+//   Row 3: ayin(1506)..tav(1514)
+//
+// CTRL LETTER ROWS (digits + punctuation):
+//   Row 1: '1'..'9'
+//   Row 2: '0','.',',','!','?','(',')',':',';'
+//   Row 3: '-','/','_','@','*','+','=','<','>'
+//
+// ACTION CODES:
+//   > 0  : insert CHAR(code) at cursor
+//   -1   : no action / miss
+//   -2   : backspace
+//   -3   : enter / newline
+//   -4   : move left
+//   -5   : move right
+//   -6   : move up
+//   -7   : move down
+//   -8   : switch layout (HEB <-> CTL)
+//   -9   : toggle keyboard visibility
+//   -10  : exit shell
+//
+// INPUT MODEL:
+//   Touch down (ev(1)==0): hit-test keyboard panel, dispatch action
+//   Hardware key code 4 (ESC/Back): exit shell
+//   All other hardware keys: ignored in MVP
+//
+// REDRAW CONTRACT:
+//   ES_DIRTY := 1 after any state change
+//   ES__AdjustViewport() + ES__DrawAll() called when ES_DIRTY is set
+//   No redraw without state change (dirty-flag discipline)
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// Shell state globals
+// ----------------------------------------------------------------
+EXPORT ES_CL;        // cursor line    (1-based)
+EXPORT ES_CC;        // cursor column  (1-based)
+EXPORT ES_DIRTY;     // 1 = needs redraw
+EXPORT ES_KBD_VIS;   // 1 = keyboard panel visible
+EXPORT ES_KBD_LAY;   // 0 = Hebrew layout,  1 = Ctrl/digits layout
+EXPORT ES_RUNNING;   // 1 = event loop active
+EXPORT ES_KB_HEB;    // list(27): Hebrew codepoints in key order
+EXPORT ES_KB_CTL;    // list(27): Ctrl-layout codepoints in key order
+
+
+// ----------------------------------------------------------------
+// ES__InitState -- set all shell globals to defaults
+// Document (L0) is NOT touched here.
+// ----------------------------------------------------------------
+EXPORT ES__InitState()
+BEGIN
+  ES_CL      := 1;
+  ES_CC      := 1;
+  ES_DIRTY   := 0;
+  ES_KBD_VIS := 1;
+  ES_KBD_LAY := 0;
+  ES_RUNNING := 0;
+  ES_KB_HEB  := {1488,1489,1490,1491,1492,1493,1494,1495,1496,
+                 1497,1498,1499,1500,1501,1502,1503,1504,1505,
+                 1506,1507,1508,1509,1510,1511,1512,1513,1514};
+  ES_KB_CTL  := {49,50,51,52,53,54,55,56,57,
+                 48,46,44,33,63,40,41,58,59,
+                 45,47,95,64,42,43,61,60,62};
+END;
+
+
+// ----------------------------------------------------------------
+// ES__ConfigRenderer -- update R_LINES_VIS based on keyboard state
+// Must be called before REND_DrawDoc when visibility changes.
+// ----------------------------------------------------------------
+EXPORT ES__ConfigRenderer()
+BEGIN
+  R_Y_TOP := 16;
+  IF ES_KBD_VIS THEN
+    R_LINES_VIS := 4;
+  ELSE
+    R_LINES_VIS := 9;
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__AdjustViewport -- scroll R_VIEW_TOP to keep cursor visible
+// ----------------------------------------------------------------
+EXPORT ES__AdjustViewport()
+BEGIN
+  LOCAL vt;
+  vt := R_VIEW_TOP;
+  IF ES_CL < vt THEN
+    vt := ES_CL;
+  END;
+  IF ES_CL >= vt + R_LINES_VIS THEN
+    vt := ES_CL - R_LINES_VIS + 1;
+  END;
+  IF vt < 1 THEN vt := 1; END;
+  R_VIEW_TOP := vt;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__DrawHeader -- dark header bar with layout indicator
+// ----------------------------------------------------------------
+EXPORT ES__DrawHeader()
+BEGIN
+  LOCAL cbg, cwh, chl;
+  cbg := RGB(40,40,40);
+  cwh := RGB(255,255,255);
+  chl := RGB(100,220,100);
+  RECT_P(0, 0, 319, 15, cbg, cbg);
+  TEXTOUT_P("HP Prime Editor", 4, 3, 1, cwh);
+  IF ES_KBD_LAY == 0 THEN
+    TEXTOUT_P("[HEB]", 220, 3, 1, chl);
+  ELSE
+    TEXTOUT_P("[CTL]", 220, 3, 1, RGB(100,210,220));
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__DrawKbdCtrlRow -- 9 control keys at y=107..138 (35px each)
+// SP | BS | ENT | < | > | ^ | v | LAY | KBD
+// ----------------------------------------------------------------
+EXPORT ES__DrawKbdCtrlRow()
+BEGIN
+  LOCAL kk, kx, cbg, cbd, cfg;
+  LOCAL lbl;
+  cbg := RGB(160,175,215);
+  cbd := RGB(70,85,120);
+  cfg := RGB(0,0,0);
+  FOR kk FROM 1 TO 9 DO
+    kx  := (kk - 1) * 35 + 2;
+    RECT_P(kx, 107, kx+33, 138, cbd, cbg);
+    IF kk == 1 THEN lbl := "SP";  END;
+    IF kk == 2 THEN lbl := "BS";  END;
+    IF kk == 3 THEN lbl := "ENT"; END;
+    IF kk == 4 THEN lbl := "<";   END;
+    IF kk == 5 THEN lbl := ">";   END;
+    IF kk == 6 THEN lbl := "^";   END;
+    IF kk == 7 THEN lbl := "v";   END;
+    IF kk == 8 THEN lbl := "LAY"; END;
+    IF kk == 9 THEN lbl := "KBD"; END;
+    TEXTOUT_P(lbl, kx+4, 119, 1, cfg);
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__DrawKbdLetterRows -- 3 rows of 9 letter keys (y=139..234)
+// Hebrew layout: HFB_BlitGlyph for each key label
+// Ctrl layout:   TEXTOUT_P CHAR(cp) for each key label
+// ----------------------------------------------------------------
+EXPORT ES__DrawKbdLetterRows()
+BEGIN
+  LOCAL row, col, kx, ky, kidx, cp, gidx;
+  LOCAL cbg, cbd, cfg;
+  IF ES_KBD_LAY == 0 THEN
+    cbg := RGB(232,232,255);
+  ELSE
+    cbg := RGB(232,255,232);
+  END;
+  cbd := RGB(110,110,145);
+  cfg := RGB(0,0,0);
+  FOR row FROM 1 TO 3 DO
+    ky := 107 + row * 32;
+    FOR col FROM 1 TO 9 DO
+      kx   := (col - 1) * 35 + 2;
+      kidx := (row - 1) * 9 + col;
+      RECT_P(kx, ky, kx+33, ky+31, cbd, cbg);
+      IF ES_KBD_LAY == 0 THEN
+        cp   := ES_KB_HEB(kidx);
+        gidx := HFB_CodeToIdx(cp);
+        IF gidx > 0 THEN
+          HFB_BlitGlyph(gidx, kx+10, ky+6);
+        END;
+      ELSE
+        cp := ES_KB_CTL(kidx);
+        TEXTOUT_P(CHAR(cp), kx+13, ky+11, 1, cfg);
+      END;
+    END;
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__DrawAll -- full screen redraw
+// Order: clear -> header -> editor -> keyboard (if visible)
+// ----------------------------------------------------------------
+EXPORT ES__DrawAll()
+BEGIN
+  ES__ConfigRenderer();
+  RECT_P(0, 0, 319, 239, RGB(255,255,255), RGB(255,255,255));
+  ES__DrawHeader();
+  REND_DrawDoc(ES_CL, ES_CC);
+  IF ES_KBD_VIS THEN
+    ES__DrawKbdCtrlRow();
+    ES__DrawKbdLetterRows();
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__HitTest -- map touch (tx,ty) to action code or codepoint
+// Returns: >0 = codepoint to insert;  <0 = named action;  -1 = miss
+//
+// Control row  y=107..138: col = IP((tx-2)/35)+1, clamped 1..9
+// Letter rows  y=139..234: row = IP((ty-139)/32)+1, col = IP((tx-2)/35)+1
+// ----------------------------------------------------------------
+EXPORT ES__HitTest(tx, ty)
+BEGIN
+  LOCAL col, row, kidx;
+  IF ty >= 107 AND ty <= 138 THEN
+    col := IP((tx - 2) / 35) + 1;
+    IF col < 1 THEN col := 1; END;
+    IF col > 9 THEN col := 9; END;
+    IF col == 1 THEN RETURN 32;  END;
+    IF col == 2 THEN RETURN -2;  END;
+    IF col == 3 THEN RETURN -3;  END;
+    IF col == 4 THEN RETURN -4;  END;
+    IF col == 5 THEN RETURN -5;  END;
+    IF col == 6 THEN RETURN -6;  END;
+    IF col == 7 THEN RETURN -7;  END;
+    IF col == 8 THEN RETURN -8;  END;
+    IF col == 9 THEN RETURN -9;  END;
+    RETURN -1;
+  END;
+  IF ty >= 139 AND ty <= 234 THEN
+    row  := IP((ty - 139) / 32) + 1;
+    col  := IP((tx - 2) / 35) + 1;
+    IF row < 1 THEN row := 1; END;
+    IF row > 3 THEN row := 3; END;
+    IF col < 1 THEN col := 1; END;
+    IF col > 9 THEN col := 9; END;
+    kidx := (row - 1) * 9 + col;
+    IF ES_KBD_LAY == 0 THEN
+      RETURN ES_KB_HEB(kidx);
+    ELSE
+      RETURN ES_KB_CTL(kidx);
+    END;
+  END;
+  RETURN -1;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__DoAction -- execute an action code
+// act > 0 : insert CHAR(act) via text engine
+// act < 0 : movement, editing, or UI action
+// ----------------------------------------------------------------
+EXPORT ES__DoAction(act)
+BEGIN
+  LOCAL res;
+  IF act == -1 THEN RETURN; END;
+  IF act > 0 THEN
+    res      := TE_InsertChar(ES_CL, ES_CC, CHAR(act));
+    ES_CL    := res(1);
+    ES_CC    := res(2);
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -2 THEN
+    res      := TE_Backspace(ES_CL, ES_CC);
+    ES_CL    := res(1);
+    ES_CC    := res(2);
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -3 THEN
+    res      := TE_Newline(ES_CL, ES_CC);
+    ES_CL    := res(1);
+    ES_CC    := res(2);
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -4 THEN
+    res      := TE_MoveLeft(ES_CL, ES_CC);
+    ES_CL    := res(1);
+    ES_CC    := res(2);
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -5 THEN
+    res      := TE_MoveRight(ES_CL, ES_CC);
+    ES_CL    := res(1);
+    ES_CC    := res(2);
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -6 THEN
+    res      := TE_MoveUp(ES_CL, ES_CC);
+    ES_CL    := res(1);
+    ES_CC    := res(2);
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -7 THEN
+    res      := TE_MoveDown(ES_CL, ES_CC);
+    ES_CL    := res(1);
+    ES_CC    := res(2);
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -8 THEN
+    IF ES_KBD_LAY == 0 THEN
+      ES_KBD_LAY := 1;
+    ELSE
+      ES_KBD_LAY := 0;
+    END;
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -9 THEN
+    IF ES_KBD_VIS THEN
+      ES_KBD_VIS := 0;
+    ELSE
+      ES_KBD_VIS := 1;
+    END;
+    ES_DIRTY := 1;
+    RETURN;
+  END;
+  IF act == -10 THEN
+    ES_RUNNING := 0;
+    RETURN;
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__HandleTouch -- process touch down event coordinates
+// ----------------------------------------------------------------
+EXPORT ES__HandleTouch(tx, ty)
+BEGIN
+  LOCAL act;
+  act := ES__HitTest(tx, ty);
+  ES__DoAction(act);
+END;
+
+
+// ----------------------------------------------------------------
+// ES__HandleKey -- process hardware key code
+// kc == 4: ESC/Back -> exit shell
+// All other codes: ignored in MVP
+// ----------------------------------------------------------------
+EXPORT ES__HandleKey(kc)
+BEGIN
+  IF kc == 4 THEN
+    ES_RUNNING := 0;
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// ES__Run -- event loop (document must be initialized before call)
+// Init -> first draw -> drain launch event -> loop
+// ----------------------------------------------------------------
+EXPORT ES__Run()
+BEGIN
+  LOCAL ev, is_touch, ev_type, drain;
+  ES__InitState();
+  REND_Init();
+  ES__ConfigRenderer();
+  R_VIEW_TOP := 1;
+  ES_RUNNING := 1;
+  ES__DrawAll();
+  drain := WAIT(-1);
+  WHILE ES_RUNNING DO
+    ev       := WAIT(-1);
+    is_touch := 0;
+    ev_type  := 0;
+    IFERR
+      ev_type  := ev(1);
+      is_touch := 1;
+    THEN
+      is_touch := 0;
+      ev_type  := ev;
+    END;
+    IF is_touch THEN
+      IF ev_type == 0 THEN
+        ES__HandleTouch(ev(2), ev(3));
+      END;
+    ELSE
+      ES__HandleKey(ev_type);
+    END;
+    IF ES_DIRTY THEN
+      ES__AdjustViewport();
+      ES__DrawAll();
+      ES_DIRTY := 0;
+    END;
+  END;
+END;
+
+
+// ----------------------------------------------------------------
+// editor_shell -- main entry: starts with empty document
+// ----------------------------------------------------------------
+EXPORT editor_shell()
+BEGIN
+  TE_Init();
+  ES__Run();
+END;
+
+
+// ----------------------------------------------------------------
+// editor_shell_from -- entry with pre-loaded document list
+// lines_list: PPL list of strings
+// ----------------------------------------------------------------
+EXPORT editor_shell_from(lines_list)
+BEGIN
+  TE_InitFrom(lines_list);
+  ES__Run();
+END;
