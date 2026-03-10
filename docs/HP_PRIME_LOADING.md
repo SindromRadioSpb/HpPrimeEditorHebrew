@@ -68,16 +68,21 @@ tail -n +2 src/module_name.ppl > hpprgm/module_name.txt
 
 ## Module Load Order on HP Prime
 
-All four modules must be loaded (via either method) in this order:
+All modules must be loaded (via either method) in this order:
 
 ```
 1. hebrew_font_bitmap   (font asset and blit functions)
 2. text_engine          (document model and editing operations)
 3. renderer             (screen rendering, uses font + doc)
-4. editor_shell         (interactive shell, uses all above)
+4. search_engine        (search logic, uses text_engine L0 accessors)
+5. editor_shell         (interactive shell, uses all above)
 ```
 
 If a module is missing or out of order, you will see "Undefined name" errors at runtime.
+
+**hpprgm file numbering vs. load order:**
+The numeric prefix on `hpprgm/*.txt` files is a directory index, not the load order.
+Always use the order above when loading into HP Prime.
 
 ---
 

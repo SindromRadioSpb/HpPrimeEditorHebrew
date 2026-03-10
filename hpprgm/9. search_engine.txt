@@ -1,0 +1,155 @@
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// HP Prime Hebrew-Russian Editor -- Search Engine  (Task 8C)
+//
+// DEPENDENCIES:
+//   text_engine  (TE_GetLine, TE_LineCount -- safe L0 access)
+//
+// RESPONSIBILITIES:
+//   - Store search query and last-match position
+//   - Find next occurrence in document (forward, wrap-once)
+//   - Return match location to caller (editor shell)
+//   - No UI, no shell state, no renderer calls
+//
+// SEARCH SEMANTICS:
+//   - Searches logical text as stored by text_engine (L0)
+//   - Search is case-sensitive (no folding in MVP)
+//   - Hebrew text is searched by logical Unicode codepoints
+//     (not by visual glyph order -- documented limitation)
+//   - Empty query always returns not-found
+//   - Wrap-once: if end of document reached without match,
+//     wrap to beginning and search up to (but not including)
+//     the start position.  Status 2 = found-after-wrap.
+//
+// API:
+//   SE_Init()        -- reset all state
+//   SE_Reset()       -- reset last-match only (keep query)
+//   SE_FindNext()    -- find next match; returns {status, line, col}
+//                       status: 0=not found, 1=found, 2=found-wrapped
+//
+// STATE VARIABLES (read-only from outside):
+//   SE_QUERY      -- current search query string
+//   SE_LAST_LINE  -- line of last match (0 = none)
+//   SE_LAST_COL   -- start column of last match (1-based)
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// Search state globals
+// ----------------------------------------------------------------
+EXPORT SE_QUERY;      // search query string
+EXPORT SE_LAST_LINE;  // 0 = no previous match; >0 = line of last match
+EXPORT SE_LAST_COL;   // start column of last match (1-based)
+
+
+// ----------------------------------------------------------------
+// SE_Init -- reset all search state
+// ----------------------------------------------------------------
+EXPORT SE_Init()
+BEGIN
+  SE_QUERY     := "";
+  SE_LAST_LINE := 0;
+  SE_LAST_COL  := 0;
+END;
+
+
+// ----------------------------------------------------------------
+// SE_Reset -- reset last-match position only (keep query intact)
+// Use when re-running search from top after query change.
+// ----------------------------------------------------------------
+EXPORT SE_Reset()
+BEGIN
+  SE_LAST_LINE := 0;
+  SE_LAST_COL  := 0;
+END;
+
+
+// ----------------------------------------------------------------
+// SE_FindNext -- find next occurrence of SE_QUERY in document
+//
+// Search starts just after the last found match (SE_LAST_LINE,
+// SE_LAST_COL). If SE_LAST_LINE == 0, starts from line 1 col 1.
+//
+// Returns {status, line, col}:
+//   {0, 0, 0}     -- not found anywhere
+//   {1, ln, col}  -- found at ln:col (forward, no wrap)
+//   {2, ln, col}  -- found at ln:col (after wrapping from end)
+//
+// On success, SE_LAST_LINE and SE_LAST_COL are updated so
+// the next call to SE_FindNext continues from after this match.
+// ----------------------------------------------------------------
+EXPORT SE_FindNext()
+BEGIN
+  LOCAL qlen, nlines, start_line, start_col;
+  LOCAL ln, txt, sub_txt, pos_in_sub, search_from;
+
+  qlen   := SIZE(SE_QUERY);
+  nlines := TE_LineCount();
+
+  IF qlen == 0 THEN RETURN {0, 0, 0}; END;
+  IF nlines == 0 THEN RETURN {0, 0, 0}; END;
+
+  // Determine start position for this search pass
+  IF SE_LAST_LINE == 0 THEN
+    start_line := 1;
+    start_col  := 1;
+  ELSE
+    // Advance past the end of the last match
+    start_line := SE_LAST_LINE;
+    start_col  := SE_LAST_COL + qlen;
+  END;
+
+  // Guard: clamp start_line to valid range
+  IF start_line > nlines THEN
+    start_line := nlines;
+    start_col  := SIZE(TE_GetLine(nlines)) + 2;
+  END;
+
+  // ---- Forward pass: start_line:start_col through end of doc ----
+  FOR ln FROM start_line TO nlines DO
+    txt := TE_GetLine(ln);
+    IF ln == start_line THEN
+      search_from := start_col;
+    ELSE
+      search_from := 1;
+    END;
+    IF search_from <= SIZE(txt) THEN
+      sub_txt    := MID(txt, search_from, 500);
+      pos_in_sub := INSTRING(sub_txt, SE_QUERY);
+      IF pos_in_sub > 0 THEN
+        SE_LAST_LINE := ln;
+        SE_LAST_COL  := search_from + pos_in_sub - 1;
+        RETURN {1, SE_LAST_LINE, SE_LAST_COL};
+      END;
+    END;
+  END;
+
+  // ---- Wrap pass: line 1:col 1 up to (not past) start position ----
+  // Only attempt if we didn't start from the very beginning
+  IF start_line > 1 OR start_col > 1 THEN
+    FOR ln FROM 1 TO nlines DO
+      txt := TE_GetLine(ln);
+      IF ln == start_line THEN
+        // On the start line: only accept matches strictly before start_col
+        pos_in_sub := INSTRING(txt, SE_QUERY);
+        IF pos_in_sub > 0 AND pos_in_sub < start_col THEN
+          SE_LAST_LINE := ln;
+          SE_LAST_COL  := pos_in_sub;
+          RETURN {2, SE_LAST_LINE, SE_LAST_COL};
+        END;
+        EXIT;  // stop wrap pass at the start line
+      END;
+      // Lines before start_line: full search from col 1
+      pos_in_sub := INSTRING(txt, SE_QUERY);
+      IF pos_in_sub > 0 THEN
+        SE_LAST_LINE := ln;
+        SE_LAST_COL  := pos_in_sub;
+        RETURN {2, SE_LAST_LINE, SE_LAST_COL};
+      END;
+    END;
+  END;
+
+  // Not found anywhere
+  RETURN {0, 0, 0};
+END;

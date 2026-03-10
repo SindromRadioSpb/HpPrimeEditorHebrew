@@ -2,66 +2,70 @@ editor_shell;
 #pragma mode( separator(.,;) integer(h32) )
 
 // ================================================================
-// HP Prime Hebrew-Russian Editor -- Editor Shell  (Task 8A)
+// HP Prime Hebrew-Russian Editor -- Editor Shell  (Task 8C)
 //
 // DEPENDENCIES:
-//   text_engine        (L0, TE_Init/From, TE_InsertChar, TE_Backspace,
-//                       TE_Delete, TE_Newline, TE_MoveLeft/Right/Up/Down,
-//                       TE_MoveLineStart, TE_MoveLineEnd)
-//   renderer           (REND_Init, REND_DrawDoc, R_VIEW_TOP, R_LINES_VIS,
-//                       R_Y_TOP)
-//   hebrew_font_bitmap (loaded via REND_Init, HFB_CodeToIdx, HFB_BlitGlyph)
+//   text_engine    (L0, TE_Init/From, TE_InsertChar, TE_Backspace,
+//                   TE_Delete, TE_Newline, TE_MoveLeft/Right/Up/Down,
+//                   TE_MoveLineStart, TE_MoveLineEnd)
+//   renderer       (REND_Init, REND_DrawDoc, R_VIEW_TOP, R_LINES_VIS,
+//                   R_Y_TOP)
+//   search_engine  (SE_Init, SE_Reset, SE_FindNext, SE_QUERY,
+//                   SE_LAST_LINE, SE_LAST_COL)
+//   hebrew_font_bitmap (loaded via REND_Init)
 //
 // SCREEN LAYOUT (320x240):
-//   y  0..15   : header bar (title + L:cc C:cc + [HEB]/[CTL] + [K])
+//   y  0..15   : header bar
+//     Normal:  "HP Ed" | L:n C:n | [HEB]/[CTL] | [K]
+//     Search:  ">>" | query text | status [OK]/[??]/[WR] | [K]
 //   y 16..103  : editor area when keyboard visible (4 lines x 22px)
 //   y 16..213  : editor area when keyboard hidden  (9 lines x 22px)
-//   y 107..138 : control key row  (12 keys x 26px)
-//   y 139..170 : letter row 1     (9 keys x 35px)
-//   y 171..202 : letter row 2     (9 keys x 35px)
-//   y 203..234 : letter row 3     (9 keys x 35px)
+//   y 107..138 : control key row (13 keys x 24px)
+//   y 139..170 : letter row 1   (9 keys x 35px)
+//   y 171..202 : letter row 2   (9 keys x 35px)
+//   y 203..234 : letter row 3   (9 keys x 35px)
 //
-// KEYBOARD CONTROL ROW (left to right, 12 keys x 26px):
-//   SP  BS  DL  EN  <  >  ^  v  HM  ED  LA  KB
-//   (SP=space, BS=backspace, DL=delete-forward, EN=enter,
-//    <=left, >=right, ^=up, v=down, HM=line-start, ED=line-end,
-//    LA=layout-toggle, KB=keyboard-toggle)
+// CONTROL ROW - Normal mode (13 keys x 24px):
+//   SP  BS  DL  EN  <  >  ^  v  HM  ED  LA  KB  SR
 //
-// HEBREW LETTER ROWS (codepoints in logical order):
-//   Row 1: alef(1488)..tet(1496)
-//   Row 2: yod(1497)..samekh(1505)
-//   Row 3: ayin(1506)..tav(1514)
-//
-// CTRL LETTER ROWS (digits + punctuation):
-//   Row 1: '1'..'9'
-//   Row 2: '0','.',',','!','?','(',')',':',';'
-//   Row 3: '-','/','_','@','*','+','=','<','>'
+// CONTROL ROW - Search mode:
+//   SP  BS  --  GO  --  --  --  --  --  --  LA  --  CNL
+//   Active: SP(space in query), BS(del last query char),
+//           GO(find/find-next), LA(layout toggle), CNL(cancel search)
 //
 // ACTION CODES:
-//   > 0  : insert CHAR(code) at cursor
-//   -1   : no action / miss
-//   -2   : backspace (delete char before cursor)
-//   -3   : enter / newline
+//   > 0  : in normal mode: insert CHAR(code)
+//          in search mode: append CHAR(code) to SE_QUERY
+//   -1   : no action
+//   -2   : backspace (doc) / remove last query char (search)
+//   -3   : enter/newline (doc) / execute find (search = "GO")
 //   -4   : move left
 //   -5   : move right
 //   -6   : move up
 //   -7   : move down
-//   -8   : switch layout (HEB <-> CTL)
+//   -8   : switch layout HEB <-> CTL (both modes)
 //   -9   : toggle keyboard visibility
-//   -10  : exit shell
-//   -11  : delete forward (char at cursor)
+//   -10  : exit shell (hardware ESC in normal mode)
+//   -11  : delete forward
 //   -12  : move to line start (Home)
-//   -13  : move to line end  (End)
+//   -13  : move to line end   (End)
+//   -14  : enter search mode (normal) / exit search mode (search)
+//
+// SEARCH STATUS (ES_SRCH_MSG):
+//   0 = idle (search mode just entered, no search run yet)
+//   1 = found (last find succeeded, forward)
+//   2 = not found
+//   3 = found after wrap (wrapped once from end to start)
 //
 // DIRTY FLAGS:
 //   ES_DOC_DIRTY = 1 : header + editor area needs redraw
 //   ES_KBD_DIRTY = 1 : keyboard panel needs redraw
-//   Both may be set simultaneously (triggers full redraw)
 //
 // INPUT MODEL:
 //   Touch down (ev(1)==0): hit-test keyboard panel, dispatch action
-//   Hardware key code 4 (ESC/Back): exit shell
-//   All other hardware keys: ignored in MVP
+//   Hardware ESC (key 4):
+//     - in search mode: exit search mode, stay in editor
+//     - in normal mode: exit editor
 // ================================================================
 
 
@@ -77,6 +81,8 @@ EXPORT ES_KBD_LAY;     // 0 = Hebrew layout,  1 = Ctrl/digits layout
 EXPORT ES_RUNNING;     // 1 = event loop active
 EXPORT ES_KB_HEB;      // list(27): Hebrew codepoints in key order
 EXPORT ES_KB_CTL;      // list(27): Ctrl-layout codepoints in key order
+EXPORT ES_SRCH_MODE;   // 0 = normal editing, 1 = search mode active
+EXPORT ES_SRCH_MSG;    // search status: 0=idle 1=found 2=notfound 3=wrapped
 
 
 // ----------------------------------------------------------------
@@ -92,18 +98,20 @@ BEGIN
   ES_KBD_VIS   := 1;
   ES_KBD_LAY   := 0;
   ES_RUNNING   := 0;
+  ES_SRCH_MODE := 0;
+  ES_SRCH_MSG  := 0;
   ES_KB_HEB := {1488,1489,1490,1491,1492,1493,1494,1495,1496,
                 1497,1498,1499,1500,1501,1502,1503,1504,1505,
                 1506,1507,1508,1509,1510,1511,1512,1513,1514};
   ES_KB_CTL := {49,50,51,52,53,54,55,56,57,
                 48,46,44,33,63,40,41,58,59,
                 45,47,95,64,42,43,61,60,62};
+  SE_Init();
 END;
 
 
 // ----------------------------------------------------------------
 // ES__ConfigRenderer -- update R_LINES_VIS based on keyboard state
-// Must be called before REND_DrawDoc when visibility changes.
 // ----------------------------------------------------------------
 EXPORT ES__ConfigRenderer()
 BEGIN
@@ -135,71 +143,115 @@ END;
 
 
 // ----------------------------------------------------------------
-// ES__DrawHeader -- header bar: title + cursor pos + layout + KB
-// Layout: "HP Ed" | L:n C:n | [HEB]/[CTL] | [K]
+// ES__DrawHeader -- header bar
+//
+// Normal mode:  "HP Ed"  L:n C:n  [HEB]/[CTL]  [K]
+// Search mode:  ">>"  <query>  [OK]/[??]/[WR]  [K]
 // ----------------------------------------------------------------
 EXPORT ES__DrawHeader()
 BEGIN
-  LOCAL cbg, cwh, chl, cdi, cky;
-  cbg := RGB(40,40,40);
-  cwh := RGB(255,255,255);
-  chl := RGB(100,220,100);
-  cdi := RGB(80,80,80);
+  LOCAL cbg, cwh, chl, cky, csrch;
+  cbg   := RGB(40,40,40);
+  cwh   := RGB(255,255,255);
+  chl   := RGB(100,220,100);
   RECT_P(0, 0, 319, 15, cbg, cbg);
-  TEXTOUT_P("HP Ed", 4, 3, 1, cwh);
-  TEXTOUT_P("L:", 62, 3, 1, cwh);
-  TEXTOUT_P(ES_CL, 76, 3, 1, cwh);
-  TEXTOUT_P("C:", 100, 3, 1, cwh);
-  TEXTOUT_P(ES_CC, 114, 3, 1, cwh);
-  IF ES_KBD_LAY == 0 THEN
-    TEXTOUT_P("[HEB]", 170, 3, 1, chl);
+  IF ES_SRCH_MODE THEN
+    // Search mode header: ">>" + query + status
+    csrch := RGB(80,200,255);
+    TEXTOUT_P(">>", 4, 3, 1, csrch);
+    TEXTOUT_P(SE_QUERY, 20, 3, 1, cwh);
+    IF ES_SRCH_MSG == 1 THEN
+      TEXTOUT_P("[OK]", 250, 3, 1, RGB(80,220,80));
+    END;
+    IF ES_SRCH_MSG == 2 THEN
+      TEXTOUT_P("[??]", 250, 3, 1, RGB(255,100,60));
+    END;
+    IF ES_SRCH_MSG == 3 THEN
+      TEXTOUT_P("[WR]", 250, 3, 1, RGB(255,200,60));
+    END;
   ELSE
-    TEXTOUT_P("[CTL]", 170, 3, 1, RGB(100,210,220));
+    // Normal mode header: title + cursor position + layout + kbd
+    TEXTOUT_P("HP Ed", 4, 3, 1, cwh);
+    TEXTOUT_P("L:", 62, 3, 1, cwh);
+    TEXTOUT_P(ES_CL, 76, 3, 1, cwh);
+    TEXTOUT_P("C:", 100, 3, 1, cwh);
+    TEXTOUT_P(ES_CC, 114, 3, 1, cwh);
+    IF ES_KBD_LAY == 0 THEN
+      TEXTOUT_P("[HEB]", 170, 3, 1, chl);
+    ELSE
+      TEXTOUT_P("[CTL]", 170, 3, 1, RGB(100,210,220));
+    END;
   END;
+  // Keyboard visibility indicator (both modes)
   IF ES_KBD_VIS THEN
     cky := RGB(255,200,60);
   ELSE
     cky := RGB(90,90,90);
   END;
-  TEXTOUT_P("[K]", 270, 3, 1, cky);
+  TEXTOUT_P("[K]", 295, 3, 1, cky);
 END;
 
 
 // ----------------------------------------------------------------
-// ES__DrawKbdCtrlRow -- 12 control keys at y=107..138 (26px each)
-// SP BS DL EN < > ^ v HM ED LA KB
+// ES__DrawKbdCtrlRow -- 13 control keys at y=107..138 (24px each)
+//
+// Normal mode:  SP BS DL EN <  >  ^  v  HM ED LA KB SR
+// Search mode:  SP BS -- GO --  --  --  --  -- -- LA -- CNL
+//   Active keys highlighted; inactive keys dimmed.
 // ----------------------------------------------------------------
 EXPORT ES__DrawKbdCtrlRow()
 BEGIN
-  LOCAL kk, kx, cbg, cbd, cfg;
-  LOCAL lbl;
+  LOCAL kk, kx, cbg, cbd, cfg, cdi, lbl, is_active;
   cbg := RGB(160,175,215);
   cbd := RGB(70,85,120);
   cfg := RGB(0,0,0);
-  FOR kk FROM 1 TO 12 DO
-    kx := (kk - 1) * 26 + 2;
-    RECT_P(kx, 107, kx+25, 138, cbd, cbg);
-    IF kk ==  1 THEN lbl := "SP"; END;
-    IF kk ==  2 THEN lbl := "BS"; END;
-    IF kk ==  3 THEN lbl := "DL"; END;
-    IF kk ==  4 THEN lbl := "EN"; END;
-    IF kk ==  5 THEN lbl := "<";  END;
-    IF kk ==  6 THEN lbl := ">";  END;
-    IF kk ==  7 THEN lbl := "^";  END;
-    IF kk ==  8 THEN lbl := "v";  END;
-    IF kk ==  9 THEN lbl := "HM"; END;
-    IF kk == 10 THEN lbl := "ED"; END;
-    IF kk == 11 THEN lbl := "LA"; END;
-    IF kk == 12 THEN lbl := "KB"; END;
-    TEXTOUT_P(lbl, kx+4, 119, 1, cfg);
+  cdi := RGB(120,125,145);  // dimmed background for inactive keys
+  FOR kk FROM 1 TO 13 DO
+    kx := (kk - 1) * 24 + 2;
+    is_active := 1;
+    IF ES_SRCH_MODE THEN
+      // In search mode only keys 1,2,4,11,13 are active
+      IF kk == 3 THEN is_active := 0; END;
+      IF kk >= 5 AND kk <= 10 THEN is_active := 0; END;
+      IF kk == 12 THEN is_active := 0; END;
+    END;
+    IF is_active THEN
+      RECT_P(kx, 107, kx+23, 138, cbd, cbg);
+    ELSE
+      RECT_P(kx, 107, kx+23, 138, cdi, cdi);
+    END;
+    lbl := "--";
+    IF ES_SRCH_MODE THEN
+      IF kk ==  1 THEN lbl := "SP";  END;
+      IF kk ==  2 THEN lbl := "BS";  END;
+      IF kk ==  4 THEN lbl := "GO";  END;
+      IF kk == 11 THEN lbl := "LA";  END;
+      IF kk == 13 THEN lbl := "CNL"; END;
+    ELSE
+      IF kk ==  1 THEN lbl := "SP";  END;
+      IF kk ==  2 THEN lbl := "BS";  END;
+      IF kk ==  3 THEN lbl := "DL";  END;
+      IF kk ==  4 THEN lbl := "EN";  END;
+      IF kk ==  5 THEN lbl := "<";   END;
+      IF kk ==  6 THEN lbl := ">";   END;
+      IF kk ==  7 THEN lbl := "^";   END;
+      IF kk ==  8 THEN lbl := "v";   END;
+      IF kk ==  9 THEN lbl := "HM";  END;
+      IF kk == 10 THEN lbl := "ED";  END;
+      IF kk == 11 THEN lbl := "LA";  END;
+      IF kk == 12 THEN lbl := "KB";  END;
+      IF kk == 13 THEN lbl := "SR";  END;
+    END;
+    IF is_active THEN
+      TEXTOUT_P(lbl, kx+3, 119, 1, cfg);
+    END;
   END;
 END;
 
 
 // ----------------------------------------------------------------
 // ES__DrawKbdLetterRows -- 3 rows of 9 letter keys (y=139..234)
-// Hebrew layout: HFB_BlitGlyph for each key label
-// Ctrl layout:   TEXTOUT_P CHAR(cp) for each key label
+// Hebrew layout: HFB_BlitGlyph; Ctrl layout: TEXTOUT_P CHAR(cp)
 // ----------------------------------------------------------------
 EXPORT ES__DrawKbdLetterRows()
 BEGIN
@@ -235,7 +287,6 @@ END;
 
 // ----------------------------------------------------------------
 // ES__DrawDoc -- partial redraw: header + editor area only
-// Use when only document or cursor has changed.
 // ----------------------------------------------------------------
 EXPORT ES__DrawDoc()
 BEGIN
@@ -255,7 +306,6 @@ END;
 
 // ----------------------------------------------------------------
 // ES__DrawKbd -- partial redraw: keyboard panel only
-// Use when only layout changed (letter keys toggled).
 // ----------------------------------------------------------------
 EXPORT ES__DrawKbd()
 BEGIN
@@ -271,7 +321,6 @@ END;
 
 // ----------------------------------------------------------------
 // ES__DrawAll -- full screen redraw
-// Order: clear -> header -> editor -> keyboard (if visible)
 // ----------------------------------------------------------------
 EXPORT ES__DrawAll()
 BEGIN
@@ -288,18 +337,17 @@ END;
 
 // ----------------------------------------------------------------
 // ES__HitTest -- map touch (tx,ty) to action code or codepoint
-// Returns: >0 = codepoint to insert;  <0 = named action;  -1 = miss
 //
-// Control row  y=107..138: 12 keys x 26px, col=IP((tx-2)/26)+1
+// Control row  y=107..138: 13 keys x 24px, col=IP((tx-2)/24)+1
 // Letter rows  y=139..234: 9 keys x 35px,  col=IP((tx-2)/35)+1
 // ----------------------------------------------------------------
 EXPORT ES__HitTest(tx, ty)
 BEGIN
   LOCAL col, row, kidx;
   IF ty >= 107 AND ty <= 138 THEN
-    col := IP((tx - 2) / 26) + 1;
+    col := IP((tx - 2) / 24) + 1;
     IF col <  1 THEN col :=  1; END;
-    IF col > 12 THEN col := 12; END;
+    IF col > 13 THEN col := 13; END;
     IF col ==  1 THEN RETURN 32;  END;
     IF col ==  2 THEN RETURN -2;  END;
     IF col ==  3 THEN RETURN -11; END;
@@ -312,6 +360,7 @@ BEGIN
     IF col == 10 THEN RETURN -13; END;
     IF col == 11 THEN RETURN -8;  END;
     IF col == 12 THEN RETURN -9;  END;
+    IF col == 13 THEN RETURN -14; END;
     RETURN -1;
   END;
   IF ty >= 139 AND ty <= 234 THEN
@@ -333,16 +382,96 @@ END;
 
 
 // ----------------------------------------------------------------
+// ES__DoSearchAction -- handle all actions while in search mode
+//
+// act > 0        : append CHAR(act) to SE_QUERY (query edit)
+// act == -2 (BS) : remove last char from SE_QUERY
+// act == -3 (EN) : execute find / find-next ("GO" key)
+// act == -8 (LA) : layout toggle (to switch Hebrew/Latin for query)
+// act == -14(SR) : exit search mode ("CNL" key)
+// All other acts : ignored (no-op) in search mode
+// ----------------------------------------------------------------
+EXPORT ES__DoSearchAction(act)
+BEGIN
+  LOCAL res, qlen;
+  // Insert char: append to query
+  IF act > 0 THEN
+    SE_QUERY     := SE_QUERY + CHAR(act);
+    SE_LAST_LINE := 0;   // query changed: reset match position
+    ES_SRCH_MSG  := 0;
+    ES_DOC_DIRTY := 1;
+    RETURN;
+  END;
+  // BS: remove last query character
+  IF act == -2 THEN
+    qlen := SIZE(SE_QUERY);
+    IF qlen > 0 THEN
+      SE_QUERY := MID(SE_QUERY, 1, qlen - 1);
+    END;
+    SE_LAST_LINE := 0;
+    ES_SRCH_MSG  := 0;
+    ES_DOC_DIRTY := 1;
+    RETURN;
+  END;
+  // EN/GO: execute search (find / find-next)
+  IF act == -3 THEN
+    IF SIZE(SE_QUERY) == 0 THEN
+      // Empty query: no-op
+      RETURN;
+    END;
+    res := SE_FindNext();
+    IF res(1) > 0 THEN
+      // Found: jump cursor and update viewport
+      ES_CL       := res(2);
+      ES_CC       := res(3);
+      ES_SRCH_MSG := res(1);   // 1=found, 2=wrapped
+    ELSE
+      // Not found
+      ES_SRCH_MSG := 2;
+    END;
+    ES_DOC_DIRTY := 1;
+    RETURN;
+  END;
+  // LA: layout toggle (works same as normal mode)
+  IF act == -8 THEN
+    IF ES_KBD_LAY == 0 THEN
+      ES_KBD_LAY := 1;
+    ELSE
+      ES_KBD_LAY := 0;
+    END;
+    ES_KBD_DIRTY := 1;
+    RETURN;
+  END;
+  // SR/CNL (-14): exit search mode
+  IF act == -14 THEN
+    ES_SRCH_MODE := 0;
+    ES_SRCH_MSG  := 0;
+    ES_DOC_DIRTY := 1;
+    ES_KBD_DIRTY := 1;
+    RETURN;
+  END;
+  // All other actions: no-op in search mode
+END;
+
+
+// ----------------------------------------------------------------
 // ES__DoAction -- execute an action code
-// act > 0 : insert CHAR(act) via text engine
-// act < 0 : movement, editing, or UI action
-// Sets ES_DOC_DIRTY for doc/cursor changes,
-//      ES_KBD_DIRTY for keyboard UI changes.
+//
+// In search mode: all actions routed to ES__DoSearchAction.
+// In normal mode: standard document/cursor/UI actions.
 // ----------------------------------------------------------------
 EXPORT ES__DoAction(act)
 BEGIN
   LOCAL res;
   IF act == -1 THEN RETURN; END;
+
+  // Route to search handler when search mode is active
+  IF ES_SRCH_MODE THEN
+    ES__DoSearchAction(act);
+    RETURN;
+  END;
+
+  // ---- Normal mode actions ----
   IF act > 0 THEN
     res          := TE_InsertChar(ES_CL, ES_CC, CHAR(act));
     ES_CL        := res(1);
@@ -407,7 +536,6 @@ BEGIN
     ELSE
       ES_KBD_VIS := 1;
     END;
-    // visibility change affects both editor area (line count) and kbd panel
     ES_DOC_DIRTY := 1;
     ES_KBD_DIRTY := 1;
     RETURN;
@@ -437,6 +565,15 @@ BEGIN
     ES_DOC_DIRTY := 1;
     RETURN;
   END;
+  IF act == -14 THEN
+    // Enter search mode
+    SE_Init();
+    ES_SRCH_MODE := 1;
+    ES_SRCH_MSG  := 0;
+    ES_DOC_DIRTY := 1;
+    ES_KBD_DIRTY := 1;
+    RETURN;
+  END;
 END;
 
 
@@ -453,21 +590,27 @@ END;
 
 // ----------------------------------------------------------------
 // ES__HandleKey -- process hardware key code
-// kc == 4: ESC/Back -> exit shell
-// All other codes: ignored in MVP
+// kc == 4 (ESC/Back):
+//   - in search mode: exit search mode (keep editor running)
+//   - in normal mode: exit editor
 // ----------------------------------------------------------------
 EXPORT ES__HandleKey(kc)
 BEGIN
   IF kc == 4 THEN
-    ES_RUNNING := 0;
+    IF ES_SRCH_MODE THEN
+      ES_SRCH_MODE := 0;
+      ES_SRCH_MSG  := 0;
+      ES_DOC_DIRTY := 1;
+      ES_KBD_DIRTY := 1;
+    ELSE
+      ES_RUNNING := 0;
+    END;
   END;
 END;
 
 
 // ----------------------------------------------------------------
 // ES__Redraw -- smart redraw based on dirty flags
-// Full redraw if both set; partial otherwise.
-// Clears both flags after redraw.
 // ----------------------------------------------------------------
 EXPORT ES__Redraw()
 BEGIN
@@ -485,7 +628,6 @@ END;
 
 // ----------------------------------------------------------------
 // ES__Run -- event loop (document must be initialized before call)
-// Init -> first draw -> drain launch event -> loop
 // ----------------------------------------------------------------
 EXPORT ES__Run()
 BEGIN
@@ -535,7 +677,6 @@ END;
 
 // ----------------------------------------------------------------
 // editor_shell_from -- entry with pre-loaded document list
-// lines_list: PPL list of strings
 // ----------------------------------------------------------------
 EXPORT editor_shell_from(lines_list)
 BEGIN

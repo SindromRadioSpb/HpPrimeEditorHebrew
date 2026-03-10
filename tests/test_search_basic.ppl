@@ -1,0 +1,227 @@
+test_search_basic;
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// Search MVP Test Harness  (Task 8C)
+//
+// LOAD ORDER (all required before running any test here):
+//   1. hebrew_font_bitmap
+//   2. text_engine
+//   3. renderer
+//   4. search_engine
+//   5. editor_shell
+//   6. [this file]
+//
+// ENTRY POINTS:
+//   test_search_unit()    -- unit-level SE_FindNext tests (no display)
+//   test_search_interactive()  -- full editor with search-ready doc
+//
+// ================================================================
+// UNIT TEST: test_search_unit()
+// ----------------------------------------------------------------
+// Runs SE_FindNext directly on a pre-loaded document.
+// Results are printed as a status message on screen.
+// Press any key to advance between sub-tests.
+//
+// S1: First match (forward, Latin text)
+// S2: Find next (same query, next occurrence)
+// S3: Wrap-around match (only one occurrence, wraps back)
+// S4: Not found (query absent from doc)
+// S5: Empty query (always not found)
+// S6: Hebrew query match
+// S7: Match on mixed line (Hebrew + digits)
+// S8: End-of-doc wrap -- after last match, wraps to first
+//
+// ================================================================
+// INTERACTIVE TEST: test_search_interactive()
+// ----------------------------------------------------------------
+// Launches the full editor with a pre-loaded search demo document.
+// Manual verification scenarios:
+//
+// S1: Search mode entry
+//   - Tap [SR] (rightmost key in control row)
+//   - Expected: header changes to ">>" + query bar
+//   - Expected: control row shows SP BS -- GO -- ... LA -- CNL
+//   - Expected: inactive keys are dimmed (gray)
+//
+// S2: Query input (Latin)
+//   - Tap [LA] to switch to CTL layout
+//   - Type "line" (tap l,i,n,e on Ctrl keyboard)
+//   - Expected: header shows ">> line" as you type
+//   - Expected: ES_SRCH_MSG stays 0 (idle, no search yet)
+//
+// S3: Find first match
+//   - With query "line" entered, tap [GO] (key 4 in control row)
+//   - Expected: cursor jumps to first line containing "line"
+//   - Expected: header shows ">> line [OK]" (green)
+//   - Expected: L:n C:n in header (wait -- header is in search mode,
+//     cursor position visible after exiting search)
+//
+// S4: Find next
+//   - Tap [GO] again
+//   - Expected: cursor advances to next "line" match
+//   - If only one match: header shows "[WR]" (yellow, wrapped to start)
+//
+// S5: Not found
+//   - Tap [SR] to cancel, re-enter search mode
+//   - Type "ZZZZZ" (not in document)
+//   - Tap [GO]
+//   - Expected: header shows ">> ZZZZZ [??]" (red)
+//   - Cursor does NOT move
+//
+// S6: Backspace in search query
+//   - In search mode, type "abc"
+//   - Tap [BS] three times
+//   - Expected: query clears to "" in header
+//
+// S7: Hebrew search
+//   - Enter search mode
+//   - Tap [LA] to switch to HEB layout
+//   - Tap some Hebrew letter (e.g. shin = last in row 3)
+//   - Tap [GO]
+//   - Expected: cursor jumps to line containing that Hebrew letter
+//   - Note: Hebrew may not display visually in header (known limitation)
+//     but search logic works on logical Unicode text
+//
+// S8: Cancel search (ESC key)
+//   - Enter search mode (tap [SR])
+//   - Press hardware ESC key
+//   - Expected: returns to normal editing mode
+//   - Expected: header returns to "HP Ed L:n C:n [HEB] [K]"
+//   - Expected: editor NOT closed (ESC in search mode = cancel search only)
+//
+// S9: Cancel search (CNL key)
+//   - Enter search mode (tap [SR])
+//   - Tap [CNL] (key 13, rightmost)
+//   - Expected: same as S8 (returns to normal mode)
+//
+// EXIT: Hardware ESC in NORMAL mode exits the editor.
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// ES__SearchTestMsg -- display a one-line test result on screen
+// Used by unit test only (not a production function)
+// ----------------------------------------------------------------
+EXPORT ES__SearchTestMsg(label, res_stat, res_line, res_col)
+BEGIN
+  LOCAL cbg, cwh, cok, cfail;
+  cbg   := RGB(30,30,60);
+  cwh   := RGB(255,255,255);
+  cok   := RGB(80,220,80);
+  cfail := RGB(255,80,60);
+  RECT_P(0, 0, 319, 239, cbg, cbg);
+  TEXTOUT_P(label, 10, 20, 1, cwh);
+  TEXTOUT_P("stat:", 10, 40, 1, cwh);
+  TEXTOUT_P(res_stat, 80, 40, 1, cwh);
+  TEXTOUT_P("line:", 10, 60, 1, cwh);
+  TEXTOUT_P(res_line, 80, 60, 1, cwh);
+  TEXTOUT_P("col:", 10, 80, 1, cwh);
+  TEXTOUT_P(res_col, 80, 80, 1, cwh);
+  TEXTOUT_P("query:", 10, 100, 1, cwh);
+  TEXTOUT_P(SE_QUERY, 80, 100, 1, cwh);
+  IF res_stat == 0 THEN
+    TEXTOUT_P("NOT FOUND", 10, 130, 2, cfail);
+  END;
+  IF res_stat == 1 THEN
+    TEXTOUT_P("FOUND (forward)", 10, 130, 2, cok);
+  END;
+  IF res_stat == 2 THEN
+    TEXTOUT_P("FOUND (wrapped)", 10, 130, 2, RGB(255,200,60));
+  END;
+  TEXTOUT_P("tap to continue", 10, 200, 1, RGB(150,150,150));
+  WAIT(-1);
+END;
+
+
+// ----------------------------------------------------------------
+// test_search_unit -- SE_FindNext unit tests (no shell, no event loop)
+// Pre-loads a document and tests SE_FindNext directly.
+// ----------------------------------------------------------------
+EXPORT test_search_unit()
+BEGIN
+  LOCAL h1, h2, hsh, doc, res, drain;
+  // Build test document
+  h1  := CHAR(1513)+CHAR(1500)+CHAR(1493)+CHAR(1501);
+  h2  := CHAR(1489)+CHAR(1512)+CHAR(1488)+CHAR(1513)+CHAR(1497)+CHAR(1514);
+  hsh := CHAR(1513);
+  doc := {"line one here",
+          h1,
+          "line two here",
+          h2,
+          "line three here",
+          "no match zone",
+          "line four " + hsh + " mixed"};
+  TE_InitFrom(doc);
+  drain := WAIT(-1);
+
+  // S1: First match of "line" -- expect line 1, col 1
+  SE_Init();
+  SE_QUERY := "line";
+  res := SE_FindNext();
+  ES__SearchTestMsg("S1: first 'line'", res(1), res(2), res(3));
+
+  // S2: Find next "line" -- expect line 3, col 1
+  res := SE_FindNext();
+  ES__SearchTestMsg("S2: next 'line'", res(1), res(2), res(3));
+
+  // S3: Find next "line" -- expect line 5, col 1
+  res := SE_FindNext();
+  ES__SearchTestMsg("S3: next 'line'", res(1), res(2), res(3));
+
+  // S4: Find next "line" -- expect line 7 (mixed line)
+  res := SE_FindNext();
+  ES__SearchTestMsg("S4: next 'line' (mixed)", res(1), res(2), res(3));
+
+  // S5: Find next "line" -- should wrap back to line 1
+  res := SE_FindNext();
+  ES__SearchTestMsg("S5: wrap to line 1", res(1), res(2), res(3));
+
+  // S6: Not found -- "ZZZZZ" absent from doc
+  SE_Init();
+  SE_QUERY := "ZZZZZ";
+  res := SE_FindNext();
+  ES__SearchTestMsg("S6: not found", res(1), res(2), res(3));
+
+  // S7: Empty query -- must return not-found
+  SE_Init();
+  SE_QUERY := "";
+  res := SE_FindNext();
+  ES__SearchTestMsg("S7: empty query", res(1), res(2), res(3));
+
+  // S8: Hebrew search -- search for shin (CHAR(1513))
+  SE_Init();
+  SE_QUERY := hsh;
+  res := SE_FindNext();
+  ES__SearchTestMsg("S8: Hebrew shin", res(1), res(2), res(3));
+
+  // S9: Hebrew search next (mixed line)
+  res := SE_FindNext();
+  ES__SearchTestMsg("S9: Hebrew shin next", res(1), res(2), res(3));
+
+  // Done
+  RECT_P(0,0,319,239,RGB(30,30,60),RGB(30,30,60));
+  TEXTOUT_P("UNIT TESTS DONE", 60, 110, 2, RGB(80,220,80));
+  WAIT(-1);
+END;
+
+
+// ----------------------------------------------------------------
+// test_search_interactive -- full editor with search-ready document
+// Use for manual verification of S1-S9 in the header comment above.
+// ----------------------------------------------------------------
+EXPORT test_search_interactive()
+BEGIN
+  LOCAL h1, h2, hsh, doc;
+  h1  := CHAR(1513)+CHAR(1500)+CHAR(1493)+CHAR(1501);
+  h2  := CHAR(1489)+CHAR(1512)+CHAR(1488)+CHAR(1513)+CHAR(1497)+CHAR(1514);
+  hsh := CHAR(1513);
+  doc := {"line one here",
+          h1,
+          "line two here",
+          h2,
+          "line three here",
+          "no match zone",
+          "line four " + hsh + " mixed"};
+  editor_shell_from(doc);
+END;
