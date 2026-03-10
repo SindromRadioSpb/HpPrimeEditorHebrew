@@ -1,7 +1,7 @@
 #pragma mode( separator(.,;) integer(h32) )
 
 // ================================================================
-// Editor Shell Test Harness  (Task 6)
+// Editor Shell Test Harness  (Task 8A -- Keyboard UX Upgrade)
 //
 // REQUIRES: all 4 modules loaded in order:
 //   1. hebrew_font_bitmap
@@ -11,7 +11,72 @@
 //
 // ENTRY POINTS:
 //   test_editor_shell_basic()  -- blank document, verify S1
-//   editor_shell_demo()        -- pre-loaded document, verify S2-S9
+//   editor_shell_demo()        -- pre-loaded document, verify S2-S11
+//
+// MANUAL VERIFICATION SCENARIOS:
+//
+// S1: Shell launch
+//   - Run test_editor_shell_basic()
+//   - Expected: dark header with "HP Ed", "L:1 C:1", "[HEB]", "[K]"
+//   - Expected: blue cursor at top-left of editor area
+//   - Expected: 12-key control row: SP BS DL EN < > ^ v HM ED LA KB
+//   - Expected: [K] indicator highlighted (yellow) since kbd is visible
+//   - No immediate crash or close
+//
+// S2: Cursor movement (< > ^ v)
+//   - Tap < > ^ v keys in control row
+//   - Expected: cursor moves left/right/up/down
+//   - Expected: L:n C:n in header updates on every tap
+//
+// S3: Hebrew character insertion
+//   - Tap any letter key in Hebrew rows
+//   - Expected: Hebrew glyph appears in editor (RTL from right)
+//   - Expected: cursor advances left (RTL); L:1 C:n updates
+//
+// S4: Newline (EN key)
+//   - Tap EN in control row
+//   - Expected: new line created, cursor moves to line 2 col 1
+//   - Expected: header shows L:2 C:1
+//
+// S5: Backspace (BS key)
+//   - Insert a few chars, then tap BS
+//   - Expected: last char deleted, cursor moves back
+//   - Expected: at line start, merges with previous line
+//
+// S6: Delete forward (DL key)
+//   - Position cursor before a char (use < to move left)
+//   - Tap DL
+//   - Expected: char at cursor position deleted; cursor stays put
+//
+// S7: Home / End (HM and ED keys)
+//   - On a line with several characters, tap ED
+//   - Expected: cursor jumps to end of line (C: = len+1)
+//   - Tap HM
+//   - Expected: cursor jumps to start of line (C:1)
+//
+// S8: Layout switching (LA key)
+//   - Tap LA in control row
+//   - Expected: header changes from [HEB] to [CTL] (cyan)
+//   - Expected: letter rows show digits/punctuation (green bg)
+//   - Tap LA again: returns to [HEB] (blue bg)
+//
+// S9: Keyboard hide/show (KB key)
+//   - Tap KB in control row
+//   - Expected: keyboard panel disappears, editor expands to 9 lines
+//   - Expected: [K] indicator in header dims (gray)
+//   - Tap KB again (or press hardware key to re-show): kbd reappears
+//
+// S10: Viewport adjustment
+//   - Run editor_shell_demo() (has 6 pre-loaded lines)
+//   - Tap v (down) repeatedly until cursor passes visible area
+//   - Expected: viewport scrolls so cursor stays visible
+//
+// S11: Partial redraw validation
+//   - Tap LA: only keyboard area should repaint (fast, no flicker in doc)
+//   - Tap any letter key: only header+doc should repaint (kbd stays)
+//   - Tap KB: full redraw (both areas change)
+//
+// EXIT: Press hardware ESC/Back key (code 4) to exit the shell.
 // ================================================================
 
 
@@ -36,6 +101,7 @@ END;
 
 // ----------------------------------------------------------------
 // test_editor_shell_basic -- blank document entry point
+// Verifies S1: shell launches, 12-key control row, cursor pos in header
 // ----------------------------------------------------------------
 EXPORT test_editor_shell_basic()
 BEGIN
