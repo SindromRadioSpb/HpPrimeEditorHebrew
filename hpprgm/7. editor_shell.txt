@@ -32,6 +32,21 @@
 //   Active: SP(space in query), BS(del last query char),
 //           GO(find/find-next), LA(layout toggle), CNL(cancel search)
 //
+// KEYBOARD LAYOUTS (ES_KBD_LAY, cycles 0->1->2->0 via LA key):
+//   0 = HEB : Hebrew letters (Alef..Tav, final forms)    [HEB] green
+//   1 = NUM : Digits + primary punctuation                [NUM] cyan
+//   2 = PUN : Secondary symbols, quotes, brackets        [PUN] yellow
+//
+// NUM layout (ES_KB_NUM):
+//   Row 1: 1 2 3 4 5 6 7 8 9
+//   Row 2: 0 . , : ; ? ! " '
+//   Row 3: ( ) - / @ * + = _
+//
+// PUN layout (ES_KB_PUN):
+//   Row 1: ^ & # $ % ` ~ { }
+//   Row 2: [ ] \ | < > + = 0
+//   Row 3: @ _ / * ! ? . , ;
+//
 // ACTION CODES:
 //   > 0  : in normal mode: insert CHAR(code)
 //          in search mode: append CHAR(code) to SE_QUERY
@@ -79,7 +94,8 @@ EXPORT ES_KBD_VIS;     // 1 = keyboard panel visible
 EXPORT ES_KBD_LAY;     // 0 = Hebrew layout,  1 = Ctrl/digits layout
 EXPORT ES_RUNNING;     // 1 = event loop active
 EXPORT ES_KB_HEB;      // list(27): Hebrew codepoints in key order
-EXPORT ES_KB_CTL;      // list(27): Ctrl-layout codepoints in key order
+EXPORT ES_KB_NUM;      // list(27): NUM layout -- digits + primary punctuation
+EXPORT ES_KB_PUN;      // list(27): PUN layout -- secondary symbols + quotes
 EXPORT ES_SRCH_MODE;   // 0 = normal editing, 1 = search mode active
 EXPORT ES_SRCH_MSG;    // search status: 0=idle 1=found 2=notfound 3=wrapped
 
@@ -102,9 +118,14 @@ BEGIN
   ES_KB_HEB := {1488,1489,1490,1491,1492,1493,1494,1495,1496,
                 1497,1498,1499,1500,1501,1502,1503,1504,1505,
                 1506,1507,1508,1509,1510,1511,1512,1513,1514};
-  ES_KB_CTL := {49,50,51,52,53,54,55,56,57,
-                48,46,44,33,63,40,41,58,59,
-                45,47,95,64,42,43,61,60,62};
+  // NUM: Row1=1..9  Row2=0.,: ;?!" '  Row3=()-/@*+=_
+  ES_KB_NUM := {49,50,51,52,53,54,55,56,57,
+                48,46,44,58,59,63,33,34,39,
+                40,41,45,47,64,42,43,61,95};
+  // PUN: Row1=^&# $%`~{}  Row2=[]\ |<>+=0  Row3=@_/*!?.,;
+  ES_KB_PUN := {94,38,35,36,37,96,126,123,125,
+                91,93,92,124,60,62,43,61,48,
+                64,95,47,42,33,63,46,44,59};
   SE_Init();
 END;
 
@@ -177,8 +198,10 @@ BEGIN
     TEXTOUT_P(ES_CC, 114, 3, 1, cwh);
     IF ES_KBD_LAY == 0 THEN
       TEXTOUT_P("[HEB]", 170, 3, 1, chl);
+    ELSEIF ES_KBD_LAY == 1 THEN
+      TEXTOUT_P("[NUM]", 170, 3, 1, RGB(100,210,220));
     ELSE
-      TEXTOUT_P("[CTL]", 170, 3, 1, RGB(100,210,220));
+      TEXTOUT_P("[PUN]", 170, 3, 1, RGB(255,210,60));
     END;
   END;
   // Keyboard visibility indicator (both modes)
@@ -257,9 +280,11 @@ BEGIN
   LOCAL row, col, kx, ky, kidx, cp, gidx;
   LOCAL cbg, cbd, cfg;
   IF ES_KBD_LAY == 0 THEN
-    cbg := RGB(232,232,255);
+    cbg := RGB(232,232,255);   // HEB: light blue
+  ELSEIF ES_KBD_LAY == 1 THEN
+    cbg := RGB(232,255,232);   // NUM: light green
   ELSE
-    cbg := RGB(232,255,232);
+    cbg := RGB(255,255,210);   // PUN: light yellow
   END;
   cbd := RGB(110,110,145);
   cfg := RGB(0,0,0);
@@ -275,8 +300,11 @@ BEGIN
         IF gidx > 0 THEN
           HFB_BlitGlyph(gidx, kx+10, ky+6);
         END;
+      ELSEIF ES_KBD_LAY == 1 THEN
+        cp := ES_KB_NUM(kidx);
+        TEXTOUT_P(CHAR(cp), kx+13, ky+11, 1, cfg);
       ELSE
-        cp := ES_KB_CTL(kidx);
+        cp := ES_KB_PUN(kidx);
         TEXTOUT_P(CHAR(cp), kx+13, ky+11, 1, cfg);
       END;
     END;
@@ -372,8 +400,10 @@ BEGIN
     kidx := (row - 1) * 9 + col;
     IF ES_KBD_LAY == 0 THEN
       RETURN ES_KB_HEB(kidx);
+    ELSEIF ES_KBD_LAY == 1 THEN
+      RETURN ES_KB_NUM(kidx);
     ELSE
-      RETURN ES_KB_CTL(kidx);
+      RETURN ES_KB_PUN(kidx);
     END;
   END;
   RETURN -1;
@@ -431,10 +461,12 @@ BEGIN
     ES_DOC_DIRTY := 1;
     RETURN;
   END;
-  // LA: layout toggle (works same as normal mode)
+  // LA: cycle layout HEB(0) -> NUM(1) -> PUN(2) -> HEB(0)
   IF act == -8 THEN
     IF ES_KBD_LAY == 0 THEN
       ES_KBD_LAY := 1;
+    ELSEIF ES_KBD_LAY == 1 THEN
+      ES_KBD_LAY := 2;
     ELSE
       ES_KBD_LAY := 0;
     END;
@@ -523,6 +555,8 @@ BEGIN
   IF act == -8 THEN
     IF ES_KBD_LAY == 0 THEN
       ES_KBD_LAY := 1;
+    ELSEIF ES_KBD_LAY == 1 THEN
+      ES_KBD_LAY := 2;
     ELSE
       ES_KBD_LAY := 0;
     END;

@@ -29,22 +29,25 @@ renderer;
 //   Heuristic: any character in CHAR(1488)..CHAR(1514) -> RTL.
 //   No mixed-run bidi at this phase.
 //   Non-Hebrew lines -> LTR.
-//   Mixed lines (Hebrew + other): RTL with placeholder boxes
-//   for non-Hebrew characters.  This is a documented MVP limit.
+//   Mixed lines (Hebrew + other): RTL.
+//     Non-Hebrew chars rendered as actual glyphs (TEXTOUT_P) centered
+//     in the 14px glyph cell.  Not bidi-correct but readable.
+//     Full Unicode bidi is deferred to a later phase.
 //
 // RTL RENDERING:
 //   Logical char kk blitted at x = R_X_RIGHT - 14 - (kk-1)*R_ADV_HEB
 //   kk=1 -> rightmost cell (x=302..315), kk=2 -> next left, etc.
-//   Hebrew chars -> HFB_BlitGlyph.
-//   Non-Hebrew in RTL -> gray placeholder box (R_COL_PH).
-//   Line truncated (EXIT) when x < R_X_LEFT.
+//   Hebrew chars  -> HFB_BlitGlyph.
+//   Non-Hebrew    -> TEXTOUT_P centered in 14px cell (bx+4, scr_y+6).
+//                    Renders actual digit/punctuation instead of gray box.
+//   Clipping: loop runs full slen; draw skipped when bx < R_X_LEFT.
 //   Max chars per line: ~20 (depends on R_ADV_HEB).
 //
 // LTR RENDERING:
 //   cur_x starts at R_X_LEFT and increases per char.
-//   Hebrew chars -> HFB_BlitGlyph, advance R_ADV_HEB.
-//   Non-Hebrew -> TEXTOUT_P size 1, advance R_ADV_LTR.
-//   Line truncated (EXIT) when cur_x > R_X_RIGHT.
+//   Hebrew chars  -> HFB_BlitGlyph, advance R_ADV_HEB.
+//   Non-Hebrew    -> TEXTOUT_P size 1, advance R_ADV_LTR.
+//   Clipping: loop runs full slen; draw skipped when cur_x > R_X_RIGHT.
 //
 // CURSOR MODEL:
 //   LTR: cur_x = R_X_LEFT + (cc-1) * R_ADV_LTR
@@ -202,15 +205,15 @@ END;
 //
 // RTL placement:
 //   Char kk blit at bx = R_X_RIGHT - 14 - (kk-1)*R_ADV_HEB
-//   Hebrew  -> HFB_BlitGlyph(idx, bx, scr_y)
-//   Other   -> REND__PlaceholderBox(bx, scr_y, 14, 20)
-//   EXIT when bx < R_X_LEFT (horizontal clip)
+//   Hebrew     -> HFB_BlitGlyph(idx, bx, scr_y)
+//   Non-Hebrew -> TEXTOUT_P(ch, bx+4, scr_y+6, 1, R_COL_FG)
+//   Clipping: skip draw when bx < R_X_LEFT (no EXIT)
 //
 // LTR placement:
 //   cur_x starts at R_X_LEFT, advances per character
-//   Hebrew  -> HFB_BlitGlyph, advance R_ADV_HEB
-//   Other   -> TEXTOUT_P at (cur_x, scr_y+6) size 1, advance R_ADV_LTR
-//   EXIT when cur_x > R_X_RIGHT (horizontal clip)
+//   Hebrew     -> HFB_BlitGlyph, advance R_ADV_HEB
+//   Non-Hebrew -> TEXTOUT_P at (cur_x, scr_y+6) size 1, advance R_ADV_LTR
+//   Clipping: skip draw when cur_x > R_X_RIGHT (no EXIT)
 // ----------------------------------------------------------------
 EXPORT REND_DrawLine(txt, scr_y, is_rtl)
 BEGIN
@@ -218,36 +221,46 @@ BEGIN
   slen := SIZE(txt);
   IF slen == 0 THEN RETURN; END;
   IF is_rtl THEN
+    // RTL: char kk blit at bx = R_X_RIGHT-14-(kk-1)*R_ADV_HEB
+    // No EXIT -- bounded by visibility check inside loop.
+    // Non-Hebrew chars rendered as actual glyphs (TEXTOUT_P) instead
+    // of placeholder boxes, improving mixed Hebrew+digit/punct display.
     FOR kk FROM 1 TO slen DO
       bx := R_X_RIGHT - 14 - (kk - 1) * R_ADV_HEB;
-      IF bx < R_X_LEFT THEN EXIT; END;
-      ch := MID(txt, kk, 1);
-      IF ch >= R_HEB_FIRST AND ch <= R_HEB_LAST THEN
-        cp    := REND__CharCP(ch);
-        idx_g := HFB_CodeToIdx(cp);
-        IF idx_g > 0 THEN
-          HFB_BlitGlyph(idx_g, bx, scr_y);
+      IF bx >= R_X_LEFT THEN
+        ch := MID(txt, kk, 1);
+        IF ch >= R_HEB_FIRST AND ch <= R_HEB_LAST THEN
+          cp    := REND__CharCP(ch);
+          idx_g := HFB_CodeToIdx(cp);
+          IF idx_g > 0 THEN
+            HFB_BlitGlyph(idx_g, bx, scr_y);
+          ELSE
+            REND__PlaceholderBox(bx, scr_y, 14, 20);
+          END;
         ELSE
-          REND__PlaceholderBox(bx, scr_y, 14, 20);
+          // Non-Hebrew in RTL line: show actual char centered in 14px cell.
+          // Not bidi-correct but far better than a gray box.
+          TEXTOUT_P(ch, bx + 4, scr_y + 6, 1, R_COL_FG);
         END;
-      ELSE
-        REND__PlaceholderBox(bx, scr_y, 14, 20);
       END;
     END;
   ELSE
+    // LTR: cur_x advances left to right.
+    // No EXIT -- draw only when within visible range, always advance.
     cur_x := R_X_LEFT;
     FOR kk FROM 1 TO slen DO
-      IF cur_x > R_X_RIGHT THEN EXIT; END;
       ch := MID(txt, kk, 1);
       IF ch >= R_HEB_FIRST AND ch <= R_HEB_LAST THEN
         cp    := REND__CharCP(ch);
         idx_g := HFB_CodeToIdx(cp);
-        IF idx_g > 0 THEN
+        IF idx_g > 0 AND cur_x <= R_X_RIGHT THEN
           HFB_BlitGlyph(idx_g, cur_x, scr_y);
         END;
         cur_x := cur_x + R_ADV_HEB;
       ELSE
-        TEXTOUT_P(ch, cur_x, scr_y + 6, 1, R_COL_FG);
+        IF cur_x <= R_X_RIGHT THEN
+          TEXTOUT_P(ch, cur_x, scr_y + 6, 1, R_COL_FG);
+        END;
         cur_x := cur_x + R_ADV_LTR;
       END;
     END;
@@ -310,19 +323,21 @@ BEGIN
   LOCAL lcount, vis_idx, abs_line, scr_y, txt, is_rtl, slen;
   REND_ClearArea();
   lcount := TE_LineCount();
+  // No EXIT -- bounded loop with visibility guard inside.
   FOR vis_idx FROM 1 TO R_LINES_VIS DO
     abs_line := R_VIEW_TOP + vis_idx - 1;
-    IF abs_line > lcount THEN EXIT; END;
-    scr_y  := R_Y_TOP + (vis_idx - 1) * R_LINE_H;
-    txt    := TE_GetLine(abs_line);
-    is_rtl := REND_LineDir(txt);
-    IF abs_line == cl THEN
-      RECT_P(0, scr_y, 319, scr_y + R_LINE_H - 1, R_COL_ACT, R_COL_ACT);
-    END;
-    REND_DrawLine(txt, scr_y, is_rtl);
-    IF abs_line == cl THEN
-      slen := SIZE(txt);
-      REND_DrawCursor(cc, scr_y, is_rtl, slen);
+    IF abs_line <= lcount THEN
+      scr_y  := R_Y_TOP + (vis_idx - 1) * R_LINE_H;
+      txt    := TE_GetLine(abs_line);
+      is_rtl := REND_LineDir(txt);
+      IF abs_line == cl THEN
+        RECT_P(0, scr_y, 319, scr_y + R_LINE_H - 1, R_COL_ACT, R_COL_ACT);
+      END;
+      REND_DrawLine(txt, scr_y, is_rtl);
+      IF abs_line == cl THEN
+        slen := SIZE(txt);
+        REND_DrawCursor(cc, scr_y, is_rtl, slen);
+      END;
     END;
   END;
 END;

@@ -1,0 +1,360 @@
+# Claude Code Prompt / Repo audit findings / Patch plan / Done criteria
+## Фаза: Keyboard UX Upgrade / Mixed Text Refinement
+
+### TASK
+
+Improve the HP Prime editor after Search MVP by delivering the next bounded UX phase in the correct order:
+
+1. **Keyboard UX Upgrade**
+2. **Mixed Text Refinement**
+3. **Stabilization Pass**
+
+The goal is to make text input faster, more predictable, and better suited for real mixed-text editing scenarios involving Hebrew, digits, punctuation, and future multilingual expansion.
+
+Do **not** jump yet into save/open workflow, replace, full bidi engine, or large command-mode work. This phase is specifically about strengthening the editor’s input and mixed-text foundation.
+
+---
+
+## CONTEXT
+
+Search MVP is already implemented and integrated:
+
+- separate `search_engine.ppl`
+- search mode in `editor_shell`
+- forward search with wrap-once semantics
+- distinct query input vs normal text input
+- proper ESC behavior
+- module loading order updated
+
+That means the project has already crossed the line from “interactive text editor prototype” into “interactive editor with first real user-facing feature”.
+
+The next correct step is **not** another isolated feature.
+The next step is to improve the **quality of input** and the **quality of mixed-text behavior**, because these now become the main UX bottlenecks in real usage.
+
+This phase should therefore strengthen:
+
+- keyboard layout usability
+- punctuation accessibility
+- layout/page switching predictability
+- readiness for future extra layouts
+- handling of Hebrew + digits
+- handling of Hebrew + punctuation
+- practical fallback behavior for mixed strings
+- regression confidence that Search MVP still works afterward
+
+---
+
+# Repo audit findings
+
+Claude should begin with a bounded repo audit and explicitly confirm the current state before patching.
+
+Expected audit targets:
+
+### 1. Keyboard-related structure
+Identify where the current on-screen keyboard is defined and how pages / keys / actions are represented.
+
+Need to confirm:
+
+- where key rows are defined
+- whether the keyboard layout is data-driven or partly hardcoded
+- how shell action keys are represented
+- how page switching currently works
+- whether there is already a concept of multiple keyboard pages/layouts
+- whether the current design can be extended cleanly for future Russian layout support
+
+### 2. Shell integration
+Confirm how keyboard input is routed through `editor_shell.ppl`.
+
+Need to identify:
+
+- where normal document input is handled
+- where search mode input is handled
+- how special actions are dispatched
+- whether keyboard navigation state is coupled too tightly to shell mode logic
+- whether keyboard UX improvements can be done without polluting search logic
+
+### 3. Rendering / text behavior
+Audit the current renderer / text engine path for mixed text.
+
+Need to confirm:
+
+- how logical text is stored
+- how characters are rendered line-by-line
+- whether current mixed-text behavior is deliberate fallback or incidental
+- where punctuation / digit ordering is currently determined
+- whether there is an isolated hook for improving mixed-text normalization / display behavior
+
+### 4. Search regression surface
+Identify all code paths that could regress when keyboard and mixed-text behavior change.
+
+Need to confirm:
+
+- query entry path
+- repeat search path
+- ESC path
+- mode switching between edit and search
+- whether search compares raw logical text or rendered text
+
+---
+
+# Implementation strategy
+
+This phase must be implemented in the following order.
+
+---
+
+## PATCH-01 — Keyboard UX audit + layout redesign foundation
+
+### Goal
+Prepare a clean, bounded keyboard upgrade instead of ad-hoc key shuffling.
+
+### Required work
+- Audit current keyboard pages and current key allocation
+- Document which keys are always available and which require page switching
+- Design a better keyboard page structure for real usage
+- Separate symbol-group thinking from shell-action thinking
+- Keep future extensibility in mind for additional layouts
+
+### Expected output
+A cleaner keyboard structure that improves practical access to:
+
+- Hebrew letters
+- digits
+- common punctuation
+- page switching
+- core editing controls
+
+### Important constraint
+Do not over-engineer a full international keyboard system yet.
+This patch should improve the current structure and make future extension possible, but remain bounded.
+
+---
+
+## PATCH-02 — Keyboard UX Upgrade implementation
+
+### Goal
+Make the on-screen keyboard materially easier to use.
+
+### Required work
+Implement the redesigned keyboard structure, including:
+
+- improved placement of high-frequency punctuation
+- more predictable page switching
+- cleaner separation of glyph keys vs action keys
+- stable integration with existing editor input flow
+- preservation of existing Search MVP entry behavior
+
+### Priority symbols to expose more conveniently
+Audit and use the actual project constraints, but likely candidates include:
+
+- `.`
+- `,`
+- `:`
+- `;`
+- `-`
+- `/`
+- `(`
+- `)`
+- `"`
+- `'`
+- `?`
+
+### Expected UX result
+The user should need fewer keyboard-page transitions for realistic text entry.
+
+### Constraints
+- No random shell hacks
+- No breaking the 13-key control row discipline if that is now canonical
+- No regression in search-mode behavior
+- No regression in regular text entry
+
+---
+
+## PATCH-03 — Mixed Text audit + regression corpus
+
+### Goal
+Before changing mixed-text behavior, establish a real set of problem cases.
+
+### Required work
+Create a fixed regression corpus of representative strings, grouped at least into:
+
+- Hebrew + digits
+- Hebrew + punctuation
+- Hebrew + Latin
+- short technical labels / notation
+- future-facing Hebrew + Russian placeholders if encoding/path supports at least planning for it
+
+### Example categories
+Not exact required strings, but examples of what should be covered:
+
+- Hebrew word + number
+- number + Hebrew word
+- Hebrew + colon + number
+- Hebrew inside parentheses
+- Hebrew + hyphen + digits
+- short mixed technical snippets
+- sentence-ending punctuation with Hebrew text
+
+### Expected output
+A stable manual test corpus that can be reused in later phases.
+
+### Constraint
+Do not pretend to solve full bidi here. First define what the real problematic cases are.
+
+---
+
+## PATCH-04 — Mixed Text Refinement implementation
+
+### Goal
+Improve the most important mixed-text cases in a practical, bounded way.
+
+### Required work
+Implement targeted improvements for the most frequent scenarios:
+
+- Hebrew + digits
+- Hebrew + punctuation
+- visually painful punctuation adjacency cases
+- practical fallback refinement for mixed strings
+
+Claude should prefer:
+
+- minimal, understandable logic
+- targeted heuristics
+- regression-friendly behavior
+- preserving logical-text storage model
+
+Claude should avoid:
+
+- introducing a fake “full bidi engine”
+- risky large rewrites
+- making search semantics depend on rendered ordering
+
+### Architectural rule
+Mixed-text refinement must stay conceptually separate from:
+
+- keyboard layout logic
+- shell mode logic
+- search engine logic
+
+If a helper module or bounded utility layer is appropriate, prefer that over scattering conditional fixes everywhere.
+
+---
+
+## PATCH-05 — Stabilization pass
+
+### Goal
+Verify that Search MVP and normal editing still work after both UX waves.
+
+### Required checks
+Claude must explicitly verify:
+
+#### Editing flow
+- normal character input
+- newline
+- backspace
+- page switching
+- punctuation entry
+- mixed-text entry
+
+#### Search flow
+- entering search mode
+- typing query
+- search OK behavior
+- repeat search
+- wrap-once result behavior
+- ESC in search mode
+- ESC back to normal editing
+- search still working on logical document text
+
+#### General behavior
+- no obvious mode confusion
+- no accidental cross-talk between keyboard layout state and search state
+- renderer still stable on long lines / typical lines
+- no broken module load order
+
+---
+
+# Done criteria
+
+The phase is done only if all of the following are true.
+
+## Keyboard UX
+- keyboard layout is more practical for real input
+- common punctuation is easier to access
+- page switching is clearer and more predictable
+- current structure is cleaner and more extensible than before
+- future extra-layout work is not blocked by today’s design
+
+## Mixed text
+- common Hebrew + digits cases are improved or at least made more predictable
+- common Hebrew + punctuation cases are improved or at least made more predictable
+- the project now has a defined mixed-text regression corpus
+- fallback behavior is more deliberate, not accidental
+
+## Stability
+- Search MVP still works correctly
+- normal editing still works correctly
+- no architectural collapse of shell / renderer / search responsibilities
+- module responsibilities remain clear
+
+---
+
+# Non-goals for this phase
+
+Do **not** include the following unless absolutely required by a tiny compatibility fix:
+
+- save/open workflow
+- replace / search-and-replace
+- command palette or major command mode
+- full bidi implementation
+- full Russian keyboard implementation
+- large viewport/navigation rewrite
+- document persistence redesign
+- file system integration
+
+This phase must remain bounded and focused.
+
+---
+
+# Deliverables expected from Claude Code
+
+Claude should return:
+
+## 1. Repo audit findings
+A concise structural audit of the relevant files/modules and current constraints.
+
+## 2. Patch plan
+A step-by-step implementation plan following PATCH-01 … PATCH-05.
+
+## 3. Concrete file list
+Exactly which files will be modified and why.
+
+## 4. Implementation notes
+Important design decisions and tradeoffs.
+
+## 5. Regression checklist
+A practical checklist for manual verification on device / emulator.
+
+## 6. Final summary
+What was improved, what remains intentionally deferred, and what the next likely phase should be.
+
+---
+
+# Preferred execution style
+
+- bounded
+- modular
+- regression-aware
+- no architecture drift
+- no fake completeness
+- improve the most important real user paths first
+
+The key principle of this phase is:
+
+**first make input better, then make mixed text more stable, then lock the gains in with stabilization.**
+
+---
+
+# One-line intent summary for Claude
+
+Implement the next editor phase after Search MVP by upgrading keyboard usability first, then refining mixed Hebrew text behavior, and finally running a stabilization pass so the editor becomes meaningfully more usable without overreaching into unrelated features.

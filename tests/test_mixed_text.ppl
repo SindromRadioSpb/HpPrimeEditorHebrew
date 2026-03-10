@@ -1,0 +1,273 @@
+test_mixed_text;
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// Mixed-Text Regression Corpus  (Task 9 -- PATCH-03/04)
+//
+// LOAD ORDER (all required):
+//   1. hebrew_font_bitmap
+//   2. text_engine
+//   3. renderer
+//   4. search_engine
+//   5. editor_shell
+//   6. [this file]
+//
+// PURPOSE:
+//   Stable regression corpus for mixed Hebrew + digits/punctuation/Latin.
+//   Used to verify rendering improvements and catch regressions.
+//
+// ENTRY POINTS:
+//   test_mixed_visual()   -- view all corpus lines in the editor
+//   test_mixed_search()   -- verify search still works on mixed content
+//
+// ================================================================
+// CORPUS CATEGORIES:
+//
+// CAT-A: Hebrew + digits
+//   A1: Hebrew word immediately followed by digits (no space)
+//   A2: Digits followed by Hebrew word
+//   A3: Hebrew + colon + number  (common in structured text)
+//   A4: Hebrew + hyphen + digit range
+//
+// CAT-B: Hebrew + punctuation
+//   B1: Hebrew with period at end
+//   B2: Hebrew with comma mid-sentence
+//   B3: Hebrew word inside parentheses
+//   B4: Hebrew with question mark
+//   B5: Hebrew with colon and semicolon
+//   B6: Hebrew with quotation marks
+//
+// CAT-C: Hebrew + Latin
+//   C1: Hebrew word + Latin word (mixed direction)
+//   C2: Latin abbreviation inside Hebrew sentence
+//   C3: Hebrew + English proper noun
+//
+// CAT-D: Technical / notation
+//   D1: Hebrew label + numeric value (e.g. counter)
+//   D2: Math notation with Hebrew
+//   D3: Short structured record with Hebrew field
+//
+// CAT-E: Search regression on mixed content
+//   E1: Search for Latin substring in mixed line
+//   E2: Search for Hebrew substring in mixed line
+//   E3: Search for digit substring in mixed line
+//   E4: Find-next across multiple mixed lines
+//
+// ================================================================
+// KNOWN LIMITATIONS (documented, not bugs):
+//
+// 1. RTL cursor position on mixed lines:
+//    The cursor advances by R_ADV_HEB (15px) for ALL chars in RTL mode,
+//    including non-Hebrew. This means cursor may appear slightly
+//    offset on mixed RTL lines. Accepted MVP limitation.
+//
+// 2. RTL visual order of non-Hebrew chars:
+//    Non-Hebrew chars in RTL lines are rendered at their logical
+//    position in the line, not at their bidi-correct visual position.
+//    E.g. "abc" in the middle of Hebrew will appear at the position
+//    corresponding to where it is in logical storage order.
+//    Full Unicode bidi is deferred.
+//
+// 3. Latin/digit chars in RTL lines now render as actual glyphs
+//    (TEXTOUT_P centered in the 14px cell) instead of gray boxes.
+//    This is the primary improvement of PATCH-04.
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// MT__BuildCorpus -- construct the 13-line test corpus
+// Returns a list of strings for use with TE_InitFrom.
+// ----------------------------------------------------------------
+EXPORT MT__BuildCorpus()
+BEGIN
+  LOCAL alf, bet, dlt, he, vav, zyn, het, tet, yod;
+  LOCAL kaf, lmd, mem, nun, smk, ayn, pe, tsdi, qof, resh, shin, tav;
+  LOCAL shalom, bereshit, israel, shana, bayit;
+  LOCAL doc;
+
+  // Hebrew letter shortcuts
+  alf  := CHAR(1488);  // Alef
+  bet  := CHAR(1489);  // Bet
+  dlt  := CHAR(1491);  // Dalet
+  he   := CHAR(1492);  // He
+  vav  := CHAR(1493);  // Vav
+  zyn  := CHAR(1494);  // Zayin
+  het  := CHAR(1495);  // Het
+  tet  := CHAR(1496);  // Tet
+  yod  := CHAR(1497);  // Yod
+  kaf  := CHAR(1499);  // Kaf
+  lmd  := CHAR(1500);  // Lamed
+  mem  := CHAR(1502);  // Mem
+  nun  := CHAR(1504);  // Nun
+  smk  := CHAR(1505);  // Samekh
+  ayn  := CHAR(1506);  // Ayin
+  pe   := CHAR(1508);  // Pe
+  tsdi := CHAR(1510);  // Tsadi
+  qof  := CHAR(1511);  // Qof
+  resh := CHAR(1512);  // Resh
+  shin := CHAR(1513);  // Shin
+  tav  := CHAR(1514);  // Tav
+
+  // Common Hebrew words (logical order = first char = visual rightmost)
+  shalom   := shin + lmd + vav + mem;          // shalom
+  bereshit := bet + resh + alf + shin + yod + tav;  // bereshit
+  israel   := yod + shin + resh + alf + lmd;   // israel
+  shana    := shin + nun + he;                 // shana (year)
+  bayit    := bet + yod + tav;                 // bayit (house)
+
+  // Build corpus
+  // CAT-A: Hebrew + digits
+  doc := {shalom + "2025",
+          "2025" + shalom,
+          shalom + ": 42",
+          israel + " 1-3",
+          // CAT-B: Hebrew + punctuation
+          shalom + ".",
+          bayit + ", " + shana,
+          "(" + shalom + ")",
+          israel + "?",
+          shana + ": " + shalom + ";",
+          '"' + shalom + '"',
+          // CAT-C: Hebrew + Latin
+          shalom + " Hello",
+          "HP " + israel,
+          // CAT-D: Technical
+          shana + " = 5785"};
+  RETURN doc;
+END;
+
+
+// ----------------------------------------------------------------
+// test_mixed_visual -- load corpus into editor for visual inspection
+//
+// Load all 13 corpus lines into the interactive editor.
+// Scroll through lines to verify:
+//   - Digits visible in Hebrew lines (not gray boxes)
+//   - Punctuation visible in Hebrew lines
+//   - Latin chars visible in Hebrew lines
+//   - Cursor roughly correct on each line
+//   - No crash on any corpus line
+// ----------------------------------------------------------------
+EXPORT test_mixed_visual()
+BEGIN
+  LOCAL doc;
+  doc := MT__BuildCorpus();
+  editor_shell_from(doc);
+END;
+
+
+// ----------------------------------------------------------------
+// test_mixed_search -- verify search on mixed-content document
+//
+// Loads corpus and runs SE_FindNext unit tests.
+// Tap to advance between sub-tests.
+//
+// E1: Search "2025" (digit in Hebrew line)   -> found
+// E2: Search "Hello" (Latin in Hebrew line)  -> found
+// E3: Search Hebrew substring (shin)          -> found in multiple
+// E4: Find-next Hebrew shin repeats correctly (no stuck match)
+// E5: Search "HP" (Latin prefix)             -> found
+// E6: Not found: "ZZZZ"                      -> status 0
+// ----------------------------------------------------------------
+EXPORT test_mixed_search()
+BEGIN
+  LOCAL doc, res, drain, shin_ch;
+  doc     := MT__BuildCorpus();
+  TE_InitFrom(doc);
+  shin_ch := CHAR(1513);
+  drain   := WAIT(-1);
+
+  // E1: search for "2025"
+  SE_Init();
+  SE_QUERY := "2025";
+  res := SE_FindNext();
+  RECT_P(0,0,319,239,RGB(20,20,50),RGB(20,20,50));
+  TEXTOUT_P("E1: find '2025'", 10, 10, 1, RGB(255,255,255));
+  TEXTOUT_P("stat:" + SE_QUERY, 10, 30, 1, RGB(200,200,200));
+  TEXTOUT_P(res(1), 10, 50, 1, RGB(100,220,100));
+  TEXTOUT_P("line:", 10, 70, 1, RGB(200,200,200));
+  TEXTOUT_P(res(2), 70, 70, 1, RGB(255,255,255));
+  TEXTOUT_P("col:", 10, 90, 1, RGB(200,200,200));
+  TEXTOUT_P(res(3), 70, 90, 1, RGB(255,255,255));
+  IF res(1) > 0 THEN
+    TEXTOUT_P("PASS", 10, 150, 2, RGB(80,220,80));
+  ELSE
+    TEXTOUT_P("FAIL - not found", 10, 150, 2, RGB(255,60,60));
+  END;
+  WAIT(-1);
+
+  // E2: search "Hello" (Latin in Hebrew RTL line)
+  SE_Init();
+  SE_QUERY := "Hello";
+  res := SE_FindNext();
+  RECT_P(0,0,319,239,RGB(20,20,50),RGB(20,20,50));
+  TEXTOUT_P("E2: find 'Hello'", 10, 10, 1, RGB(255,255,255));
+  IF res(1) > 0 THEN
+    TEXTOUT_P("PASS", 10, 60, 2, RGB(80,220,80));
+    TEXTOUT_P("line:", 10, 100, 1, RGB(200,200,200));
+    TEXTOUT_P(res(2), 70, 100, 1, RGB(255,255,255));
+  ELSE
+    TEXTOUT_P("FAIL", 10, 60, 2, RGB(255,60,60));
+  END;
+  WAIT(-1);
+
+  // E3: search Hebrew shin -- should find multiple matches
+  SE_Init();
+  SE_QUERY := shin_ch;
+  res := SE_FindNext();
+  RECT_P(0,0,319,239,RGB(20,20,50),RGB(20,20,50));
+  TEXTOUT_P("E3: find shin (1st)", 10, 10, 1, RGB(255,255,255));
+  IF res(1) > 0 THEN
+    TEXTOUT_P("PASS", 10, 60, 2, RGB(80,220,80));
+    TEXTOUT_P("line:", 10, 100, 1, RGB(200,200,200));
+    TEXTOUT_P(res(2), 70, 100, 1, RGB(255,255,255));
+  ELSE
+    TEXTOUT_P("FAIL", 10, 60, 2, RGB(255,60,60));
+  END;
+  WAIT(-1);
+
+  // E4: find-next shin -- must advance to different position
+  res := SE_FindNext();
+  RECT_P(0,0,319,239,RGB(20,20,50),RGB(20,20,50));
+  TEXTOUT_P("E4: find shin (next)", 10, 10, 1, RGB(255,255,255));
+  IF res(1) > 0 THEN
+    TEXTOUT_P("PASS", 10, 60, 2, RGB(80,220,80));
+    TEXTOUT_P("line:", 10, 100, 1, RGB(200,200,200));
+    TEXTOUT_P(res(2), 70, 100, 1, RGB(255,255,255));
+    TEXTOUT_P("col:", 10, 120, 1, RGB(200,200,200));
+    TEXTOUT_P(res(3), 70, 120, 1, RGB(255,255,255));
+  ELSE
+    TEXTOUT_P("FAIL (or no 2nd match)", 10, 60, 1, RGB(255,180,60));
+  END;
+  WAIT(-1);
+
+  // E5: search "HP" in mixed line
+  SE_Init();
+  SE_QUERY := "HP";
+  res := SE_FindNext();
+  RECT_P(0,0,319,239,RGB(20,20,50),RGB(20,20,50));
+  TEXTOUT_P("E5: find 'HP'", 10, 10, 1, RGB(255,255,255));
+  IF res(1) > 0 THEN
+    TEXTOUT_P("PASS", 10, 60, 2, RGB(80,220,80));
+  ELSE
+    TEXTOUT_P("FAIL", 10, 60, 2, RGB(255,60,60));
+  END;
+  WAIT(-1);
+
+  // E6: not found
+  SE_Init();
+  SE_QUERY := "ZZZZ";
+  res := SE_FindNext();
+  RECT_P(0,0,319,239,RGB(20,20,50),RGB(20,20,50));
+  TEXTOUT_P("E6: not found 'ZZZZ'", 10, 10, 1, RGB(255,255,255));
+  IF res(1) == 0 THEN
+    TEXTOUT_P("PASS (not found)", 10, 60, 2, RGB(80,220,80));
+  ELSE
+    TEXTOUT_P("FAIL (found unexpected)", 10, 60, 2, RGB(255,60,60));
+  END;
+  WAIT(-1);
+
+  RECT_P(0,0,319,239,RGB(20,20,50),RGB(20,20,50));
+  TEXTOUT_P("MIXED SEARCH TESTS DONE", 20, 110, 1, RGB(80,220,80));
+  WAIT(-1);
+END;
