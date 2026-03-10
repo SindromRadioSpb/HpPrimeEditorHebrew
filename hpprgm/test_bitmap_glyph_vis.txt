@@ -1,0 +1,397 @@
+test_bitmap_glyph_vis;
+#pragma mode( separator(.,;) integer(h32) )
+
+// ================================================================
+// Visual test v2: Hebrew Bitmap Font (14x20, 1-bit, 27 glyphs)
+// PREREQUISITES: hebrew_font_bitmap.hpprgm must be loaded first.
+// HOW TO RUN:   test_hfb_vis() from Home screen.
+//
+// Pages (tap/key to advance):
+//   Page 1: S1 Grid of all 27 glyphs + S2 Alignment strips
+//   Page 2: S3 Confusable pair review (11 pairs/triples)
+//   Page 3: S4 Reading strips + S5 Base vs final-form comparison
+// ================================================================
+
+// ----------------------------------------------------------------
+// Page 1: Glyph grid + alignment strips
+// ----------------------------------------------------------------
+EXPORT hfb__page1(blk, gry, blu)
+BEGIN
+  LOCAL idx, px, py, ok;
+  LOCAL s3_ok;
+
+  RECT_P(0, 0, 319, 239, RGB(255,255,255), RGB(255,255,255));
+  TEXTOUT_P("HFB v2  27 Hebrew Glyphs  [Tap->pairs]", 2, 1, 1, blu);
+  LINE_P(G0, 0, 12, 319, 12, gry);
+  TEXTOUT_P("S1: Glyph grid", 2, 14, 1, blk);
+
+  // Row A: glyphs 1-9
+  FOR idx FROM 1 TO 9 DO
+    px := (idx - 1) * 18 + 1;
+    py := 26;
+    RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+    HFB_BlitGlyph(idx, px, py);
+    TEXTOUT_P(STRING(idx), px+2, py+21, 1, blk);
+  END;
+
+  // Row B: glyphs 10-18
+  FOR idx FROM 10 TO 18 DO
+    px := (idx - 10) * 18 + 1;
+    py := 60;
+    RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+    HFB_BlitGlyph(idx, px, py);
+    TEXTOUT_P(STRING(idx), px, py+21, 1, blk);
+  END;
+
+  // Row C: glyphs 19-27
+  FOR idx FROM 19 TO 27 DO
+    px := (idx - 19) * 18 + 1;
+    py := 94;
+    RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+    HFB_BlitGlyph(idx, px, py);
+    TEXTOUT_P(STRING(idx), px, py+21, 1, blk);
+  END;
+
+  LINE_P(G0, 0, 126, 319, 126, gry);
+
+  // S2a: base alignment strip (1-22 tight, 22x14=308px)
+  TEXTOUT_P("S2a: Base 1-22 tight:", 2, 128, 1, blk);
+  FOR idx FROM 1 TO 22 DO
+    px := (idx - 1) * 14 + 2;
+    HFB_BlitGlyph(idx, px, 140);
+  END;
+
+  // S2b: final forms strip (23-27)
+  TEXTOUT_P("S2b: Finals 23-27:", 2, 163, 1, blk);
+  FOR idx FROM 23 TO 27 DO
+    px := (idx - 23) * 20 + 2;
+    RECT_P(px-1, 174, px+14, 195, gry, RGB(255,255,255));
+    HFB_BlitGlyph(idx, px, 175);
+    TEXTOUT_P(STRING(idx), px, 196, 1, blk);
+  END;
+
+  // S3 mapping test (inline, compact)
+  LINE_P(G0, 0, 210, 319, 210, gry);
+  TEXTOUT_P("S3 CodeToIdx: ", 2, 212, 1, blk);
+  s3_ok := 1;
+  IF HFB_CodeToIdx(1488) <> 1  THEN s3_ok := 0; END;
+  IF HFB_CodeToIdx(1514) <> 22 THEN s3_ok := 0; END;
+  IF HFB_CodeToIdx(1498) <> 23 THEN s3_ok := 0; END;
+  IF HFB_CodeToIdx(1501) <> 24 THEN s3_ok := 0; END;
+  IF HFB_CodeToIdx(1503) <> 25 THEN s3_ok := 0; END;
+  IF HFB_CodeToIdx(1507) <> 26 THEN s3_ok := 0; END;
+  IF HFB_CodeToIdx(1509) <> 27 THEN s3_ok := 0; END;
+  IF HFB_CodeToIdx(9999) <> 0  THEN s3_ok := 0; END;
+  IF s3_ok THEN
+    TEXTOUT_P("PASS - all 27 map correctly", 82, 212, 1, RGB(0,140,0));
+  ELSE
+    TEXTOUT_P("FAIL - check mapping table", 82, 212, 1, RGB(200,0,0));
+  END;
+
+  TEXTOUT_P("Glyphs fill rows 7-17 (14px body). Tap for pairs.", 2, 226, 1, gry);
+END;
+
+
+// ----------------------------------------------------------------
+// Page 2: Confusable pair review (11 pairs/triples)
+// Layout: 4 per row x 3 rows, each slot 78px wide
+// Slot content: label (12px) + glyph1 + 4px gap + glyph2 [+ glyph3]
+// ----------------------------------------------------------------
+EXPORT hfb__page2(blk, gry, blu)
+BEGIN
+  LOCAL col_x, row_y, g1, g2, g3;
+  LOCAL SLOT_W;
+
+  RECT_P(0, 0, 319, 239, RGB(255,255,255), RGB(255,255,255));
+  TEXTOUT_P("S3: Confusable Pairs  [Tap->strips]", 2, 1, 1, blu);
+  LINE_P(G0, 0, 12, 319, 12, gry);
+
+  SLOT_W := 78;
+
+  // === ROW 1: y=15  (label at 15, glyphs at 27) ===
+  row_y := 14;
+
+  // Pair 1: Dalet(4) / Resh(20)
+  col_x := 0 * SLOT_W + 2;
+  TEXTOUT_P("d/r", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(4,  col_x,      row_y + 12);
+  HFB_BlitGlyph(20, col_x + 18, row_y + 12);
+
+  // Pair 2: He(5) / Het(8)
+  col_x := 1 * SLOT_W + 2;
+  TEXTOUT_P("h/ht", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(5, col_x,      row_y + 12);
+  HFB_BlitGlyph(8, col_x + 18, row_y + 12);
+
+  // Pair 3: Vav(6) / Yod(10)
+  col_x := 2 * SLOT_W + 2;
+  TEXTOUT_P("v/y", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(6,  col_x,      row_y + 12);
+  HFB_BlitGlyph(10, col_x + 18, row_y + 12);
+
+  // Pair 4: Kaf(11) / Bet(2)
+  col_x := 3 * SLOT_W + 2;
+  TEXTOUT_P("kf/b", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(11, col_x,      row_y + 12);
+  HFB_BlitGlyph(2,  col_x + 18, row_y + 12);
+
+  LINE_P(G0, 0, 56, 319, 56, gry);
+
+  // === ROW 2: (label at 58, glyphs at 70) ===
+  row_y := 58;
+
+  // Pair 5: Kaf(11) / KafSofit(23)
+  col_x := 0 * SLOT_W + 2;
+  TEXTOUT_P("kf/ks", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(11, col_x,      row_y + 12);
+  HFB_BlitGlyph(23, col_x + 18, row_y + 12);
+
+  // Pair 6: Mem(13) / MemSofit(24)
+  col_x := 1 * SLOT_W + 2;
+  TEXTOUT_P("m/ms", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(13, col_x,      row_y + 12);
+  HFB_BlitGlyph(24, col_x + 18, row_y + 12);
+
+  // Pair 7: Nun(14) / NunSofit(25)
+  col_x := 2 * SLOT_W + 2;
+  TEXTOUT_P("n/ns", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(14, col_x,      row_y + 12);
+  HFB_BlitGlyph(25, col_x + 18, row_y + 12);
+
+  // Pair 8: Pe(17) / PeSofit(26)
+  col_x := 3 * SLOT_W + 2;
+  TEXTOUT_P("p/ps", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(17, col_x,      row_y + 12);
+  HFB_BlitGlyph(26, col_x + 18, row_y + 12);
+
+  LINE_P(G0, 0, 102, 319, 102, gry);
+
+  // === ROW 3: (label at 104, glyphs at 116) ===
+  row_y := 104;
+
+  // Pair 9: Tsadi(18) / TsadiSofit(27)
+  col_x := 0 * SLOT_W + 2;
+  TEXTOUT_P("ts/tss", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(18, col_x,      row_y + 12);
+  HFB_BlitGlyph(27, col_x + 18, row_y + 12);
+
+  // Pair 10: Shin(21) / Tav(22)
+  col_x := 1 * SLOT_W + 2;
+  TEXTOUT_P("sh/t", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(21, col_x,      row_y + 12);
+  HFB_BlitGlyph(22, col_x + 18, row_y + 12);
+
+  // Triple 11: Samekh(15) / Tet(9) / Ayin(16)
+  col_x := 2 * SLOT_W + 2;
+  TEXTOUT_P("s/tt/ay", col_x, row_y, 1, blk);
+  HFB_BlitGlyph(15, col_x,      row_y + 12);
+  HFB_BlitGlyph(9,  col_x + 18, row_y + 12);
+  HFB_BlitGlyph(16, col_x + 36, row_y + 12);
+
+  LINE_P(G0, 0, 148, 319, 148, gry);
+
+  // Legend
+  TEXTOUT_P("d=Dalet r=Resh h=He ht=Het v=Vav y=Yod", 2, 150, 1, gry);
+  TEXTOUT_P("kf=Kaf b=Bet ks=KafSofit m=Mem ms=MemSofit", 2, 162, 1, gry);
+  TEXTOUT_P("n=Nun ns=NunSofit p=Pe ps=PeSofit ts=Tsadi", 2, 174, 1, gry);
+  TEXTOUT_P("tss=TsadiSofit sh=Shin t=Tav s=Samekh tt=Tet ay=Ayin", 2, 186, 1, gry);
+
+  LINE_P(G0, 0, 199, 319, 199, gry);
+  TEXTOUT_P("Key: LEFT glyph=base, RIGHT=confusable. Check each pair.", 2, 201, 1, blk);
+  TEXTOUT_P("He[5] RIGHT leg first, then LEFT. Het[8] BOTH legs at once.", 2, 213, 1, RGB(0,80,200));
+  TEXTOUT_P("Tap for reading strips.", 2, 226, 1, gry);
+END;
+
+
+// ----------------------------------------------------------------
+// Page 3: Reading strips + base vs final comparison
+// ----------------------------------------------------------------
+EXPORT hfb__page3(blk, gry, blu)
+BEGIN
+  LOCAL idx, px, py, kk;
+  LOCAL strip1, strip2, strip3, strip4;
+  LOCAL strip5, strip6, strip7, strip8;
+
+  // Reading strips data: lists of glyph indices
+  // Group 1: Bet(2) Dalet(4) Resh(20)
+  strip1 := {2, 4, 20};
+  // Group 2: Vav(6) Het(8) Yod(10)
+  strip2 := {6, 8, 10};
+  // Group 3: Kaf(11) Mem(13) KafSofit(23)
+  strip3 := {11, 13, 23};
+  // Group 4: Mem(13) Nun(14) MemSofit(24)
+  strip4 := {13, 14, 24};
+  // Group 5: Pe(17) PeSofit(26)
+  strip5 := {17, 26};
+  // Group 6: Tsadi(18) TsadiSofit(27)
+  strip6 := {18, 27};
+  // Group 7: Shin(21) Tav(22)
+  strip7 := {21, 22};
+  // Group 8: Samekh(15) Tet(9) Ayin(16)
+  strip8 := {15, 9, 16};
+
+  RECT_P(0, 0, 319, 239, RGB(255,255,255), RGB(255,255,255));
+  TEXTOUT_P("S4+S5: Reading strips + Finals  [Tap->exit]", 2, 1, 1, blu);
+  LINE_P(G0, 0, 12, 319, 12, gry);
+
+  TEXTOUT_P("S4: Short reading strips (glyph sequences):", 2, 14, 1, blk);
+
+  // Strip row 1: groups 1-4, each starting x offset
+  py := 26;
+
+  // Group 1 at x=2
+  px := 2;
+  TEXTOUT_P("bdr", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip1) DO
+    HFB_BlitGlyph(strip1(kk), px + (kk-1)*15, py+10);
+  END;
+
+  // Group 2 at x=66
+  px := 66;
+  TEXTOUT_P("vhi", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip2) DO
+    HFB_BlitGlyph(strip2(kk), px + (kk-1)*15, py+10);
+  END;
+
+  // Group 3 at x=130
+  px := 130;
+  TEXTOUT_P("km.ks", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip3) DO
+    HFB_BlitGlyph(strip3(kk), px + (kk-1)*15, py+10);
+  END;
+
+  // Group 4 at x=210
+  px := 210;
+  TEXTOUT_P("mn.ms", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip4) DO
+    HFB_BlitGlyph(strip4(kk), px + (kk-1)*15, py+10);
+  END;
+
+  LINE_P(G0, 0, 57, 319, 57, gry);
+
+  // Strip row 2: groups 5-8
+  py := 60;
+
+  // Group 5 at x=2
+  px := 2;
+  TEXTOUT_P("p.ps", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip5) DO
+    HFB_BlitGlyph(strip5(kk), px + (kk-1)*15, py+10);
+  END;
+
+  // Group 6 at x=66
+  px := 66;
+  TEXTOUT_P("ts.tss", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip6) DO
+    HFB_BlitGlyph(strip6(kk), px + (kk-1)*15, py+10);
+  END;
+
+  // Group 7 at x=130
+  px := 130;
+  TEXTOUT_P("sh.t", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip7) DO
+    HFB_BlitGlyph(strip7(kk), px + (kk-1)*15, py+10);
+  END;
+
+  // Group 8 at x=200
+  px := 200;
+  TEXTOUT_P("s.tt.ay", px, py-1, 1, gry);
+  FOR kk FROM 1 TO SIZE(strip8) DO
+    HFB_BlitGlyph(strip8(kk), px + (kk-1)*16, py+10);
+  END;
+
+  LINE_P(G0, 0, 100, 319, 100, gry);
+
+  // S5: Base vs Final form side by side (5 pairs)
+  TEXTOUT_P("S5: Base vs Final form (each pair: base | sofit)", 2, 102, 1, blk);
+  TEXTOUT_P("Kaf:11/23  Mem:13/24  Nun:14/25  Pe:17/26  Tsadi:18/27", 2, 113, 1, gry);
+
+  // Show base+final for all 5, side by side with border
+  // Each pair slot: 2 glyphs x 14px + 6px gap + 4px between pairs = 38px/pair
+  // 5 pairs x 38 = 190px
+
+  // Kaf / KafSofit
+  px := 4;
+  py := 124;
+  RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+  HFB_BlitGlyph(11, px, py);
+  px := px + 16;
+  RECT_P(px-1, py-1, px+14, py+20, RGB(0,80,200), RGB(255,255,255));
+  HFB_BlitGlyph(23, px, py);
+  TEXTOUT_P("kf|ks", 4, py+22, 1, gry);
+
+  // Mem / MemSofit
+  px := 64;
+  RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+  HFB_BlitGlyph(13, px, py);
+  px := px + 16;
+  RECT_P(px-1, py-1, px+14, py+20, RGB(0,80,200), RGB(255,255,255));
+  HFB_BlitGlyph(24, px, py);
+  TEXTOUT_P("m|ms", 64, py+22, 1, gry);
+
+  // Nun / NunSofit
+  px := 124;
+  RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+  HFB_BlitGlyph(14, px, py);
+  px := px + 16;
+  RECT_P(px-1, py-1, px+14, py+20, RGB(0,80,200), RGB(255,255,255));
+  HFB_BlitGlyph(25, px, py);
+  TEXTOUT_P("n|ns", 124, py+22, 1, gry);
+
+  // Pe / PeSofit
+  px := 184;
+  RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+  HFB_BlitGlyph(17, px, py);
+  px := px + 16;
+  RECT_P(px-1, py-1, px+14, py+20, RGB(0,80,200), RGB(255,255,255));
+  HFB_BlitGlyph(26, px, py);
+  TEXTOUT_P("p|ps", 184, py+22, 1, gry);
+
+  // Tsadi / TsadiSofit
+  px := 244;
+  RECT_P(px-1, py-1, px+14, py+20, gry, RGB(255,255,255));
+  HFB_BlitGlyph(18, px, py);
+  px := px + 16;
+  RECT_P(px-1, py-1, px+14, py+20, RGB(0,80,200), RGB(255,255,255));
+  HFB_BlitGlyph(27, px, py);
+  TEXTOUT_P("ts|tss", 244, py+22, 1, gry);
+
+  LINE_P(G0, 0, 168, 319, 168, gry);
+
+  // Summary
+  TEXTOUT_P("Legend: gray box=base, blue box=final (sofit)", 2, 170, 1, blk);
+  TEXTOUT_P("Final forms: longer descender OR closed shape", 2, 182, 1, gry);
+  TEXTOUT_P("All 5 base/sofit pairs must be visually distinct.", 2, 194, 1, blk);
+
+  LINE_P(G0, 0, 208, 319, 208, gry);
+  TEXTOUT_P("VERIFY: glyphs render, baseline aligned, finals distinct.", 2, 210, 1, blk);
+  TEXTOUT_P("v2: scale=8 sz=0.92 base=0.83 thresh=130", 2, 222, 1, gry);
+  TEXTOUT_P("Tap to exit.", 2, 233, 1, gry);
+END;
+
+
+// ----------------------------------------------------------------
+// Main entry point
+// FREEZE replaced by WAIT(-1): more reliable blocking across
+// all HP Prime contexts (confirmed working in Spike03).
+// Each page waits for any key or touch before advancing.
+// ----------------------------------------------------------------
+EXPORT test_hfb_vis()
+BEGIN
+  LOCAL blk, gry, blu, ev;
+
+  blk := RGB(0, 0, 0);
+  gry := RGB(160, 160, 160);
+  blu := RGB(0, 80, 200);
+
+  HFB_Init();
+
+  hfb__page1(blk, gry, blu);
+  ev := WAIT(-1);
+
+  hfb__page2(blk, gry, blu);
+  ev := WAIT(-1);
+
+  hfb__page3(blk, gry, blu);
+  ev := WAIT(-1);
+END;
